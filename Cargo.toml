@@ -1,0 +1,36 @@
+[package]
+name = "asciidoc-zed-extension"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zed_extension_api = "=0.7.0"
+
+[workspace]
+members = [
+    "crates/adoc-antora",
+    "crates/adoc-core",
+    "crates/adoc-index",
+    "crates/adoc-ls",
+    "crates/adoc-parser",
+    "crates/adoc-render",
+]
+default-members = ["."]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/bovinemagnet/zed-asciidoc"
+version = "0.1.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+name = "AsciiDoc"
+grammar = "asciidoc"
+path_suffixes = ["adoc", "asciidoc", "ad"]
+line_comments = ["// "]
+tab_size = 2
+hard_tabs = false
+
+brackets = [
+  { start = "[", end = "]", close = true, newline = false },
+  { start = "(", end = ")", close = true, newline = false },
+  { start = "{", end = "}", close = true, newline = false },
+]

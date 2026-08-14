@@ -1,0 +1,33 @@
+{
+  "Document title": {
+    "prefix": "doctitle",
+    "body": [
+      "= ${1:Document Title}",
+      "${2:Author Name}",
+      ":toc:",
+      "",
+      "$0"
+    ],
+    "description": "Create an AsciiDoc document header"
+  },
+  "Section": {
+    "prefix": "section",
+    "body": ["== ${1:Section Title}", "", "$0"],
+    "description": "Create a level-one section"
+  },
+  "Source block": {
+    "prefix": "source",
+    "body": ["[source,${1:language}]", "----", "$0", "----"],
+    "description": "Create a delimited source block"
+  },
+  "Include": {
+    "prefix": "include",
+    "body": ["include::${1:path}[]$0"],
+    "description": "Insert an include directive"
+  },
+  "Cross reference": {
+    "prefix": "xref",
+    "body": ["xref:${1:target}[${2:text}]$0"],
+    "description": "Insert a cross reference"
+  }
+}
