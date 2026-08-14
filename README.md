@@ -16,14 +16,15 @@ Implemented:
 - Minimal semantic parser for titles, sections, attributes, anchors, xrefs, and includes.
 - Replacement-based workspace index and basic file/anchor definition resolution.
 - Initial Antora model and renderer abstraction, including a system Asciidoctor adapter.
-- `adoc-ls` document state, symbols, diagnostics, and definition handler foundations.
+- `adoc-ls` stdio transport with incremental synchronization, document symbols, diagnostics, and Go to Definition.
+- Workspace indexing and conservative diagnostics for missing local xrefs, anchors, and includes.
+- Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - Small deterministic fixtures.
 
 Not implemented yet:
 
-- LSP JSON-RPC transport and Zed language-server adapter.
 - Antora descriptor parsing, catalog discovery, and resource resolution.
-- Workspace diagnostics for missing xrefs and includes.
+- Completion, rename, references, and code actions.
 - Preview UI and renderer-to-editor integration.
 
 ## Development
@@ -38,6 +39,12 @@ cargo test --workspace
 cargo run -p adoc-ls -- --version
 ```
 
-Zed dev extension builds require Rust installed through `rustup` with the `wasm32-wasip2` target. Install the repository root as a dev extension to exercise language detection and Tree-sitter queries. The `adoc-ls --stdio` transport is intentionally disabled until protocol handling is implemented.
+Install the language-server executable before loading the repository root as a Zed dev extension:
+
+```sh
+cargo install --path crates/adoc-ls
+```
+
+Zed dev extension builds require Rust installed through `rustup` with the `wasm32-wasip2` target. Once loaded, the extension starts `adoc-ls --stdio` from `PATH` for AsciiDoc buffers.
 
 Use `docs/prd/PRD-AsciiDoc_for_Zed_Initial_Implementation_Specification.md` as the implementation source of truth.

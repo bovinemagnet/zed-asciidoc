@@ -7,6 +7,10 @@ description = "AsciiDoc, Asciidoctor, and Antora language support"
 repository = "https://github.com/bovinemagnet/zed-asciidoc"
 snippets = ["./snippets/asciidoc.json"]
 
+[language_servers.adoc-ls]
+name = "adoc-ls"
+languages = ["AsciiDoc"]
+
 [grammars.asciidoc]
 repository = "https://github.com/cathaysia/tree-sitter-asciidoc"
 rev = "e0710115e7b060ce6681b5182a49a792813006f1"
