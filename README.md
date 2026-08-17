@@ -15,15 +15,17 @@ Implemented:
 - Core AsciiDoc domain types.
 - Minimal semantic parser for titles, sections, attributes, anchors, xrefs, and includes.
 - Replacement-based workspace index and basic file/anchor definition resolution.
-- Initial Antora model and renderer abstraction, including a system Asciidoctor adapter.
+- Renderer abstraction and direct system Asciidoctor adapter for file or unsaved source, safe modes, attributes, and custom stylesheets.
 - `adoc-ls` stdio transport with incremental synchronization, document symbols, diagnostics, and Go to Definition.
 - Workspace indexing and conservative diagnostics for missing local xrefs, anchors, and includes.
+- Antora descriptor parsing plus deterministic component, module, and resource-family discovery.
+- Same-component Antora xref/include navigation and unknown module/resource diagnostics.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - Small deterministic fixtures.
 
 Not implemented yet:
 
-- Antora descriptor parsing, catalog discovery, and resource resolution.
+- Cross-component/version Antora selection and `antora.yml` editor diagnostics.
 - Completion, rename, references, and code actions.
 - Preview UI and renderer-to-editor integration.
 
