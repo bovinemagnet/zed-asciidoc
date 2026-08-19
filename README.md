@@ -18,8 +18,11 @@ Implemented:
 - Renderer abstraction and direct system Asciidoctor adapter for file or unsaved source, safe modes, attributes, and custom stylesheets.
 - `adoc-ls` stdio transport with incremental synchronization, document symbols, diagnostics, and Go to Definition.
 - Workspace indexing and conservative diagnostics for missing local xrefs, anchors, and includes.
+- Reference resolution that follows Asciidoctor and Antora semantics: module-root-relative page IDs,
+  implicit and natural section references, anchors declared in included partials, and bibliography anchors.
 - Antora descriptor parsing plus deterministic component, module, and resource-family discovery.
-- Same-component Antora xref/include navigation and unknown module/resource diagnostics.
+- Same-component Antora xref/include navigation and unknown module/resource diagnostics; components
+  absent from the workspace are assumed to come from elsewhere in the playbook and are not reported.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - Small deterministic fixtures.
 
