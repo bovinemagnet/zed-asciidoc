@@ -8,7 +8,7 @@ use adoc_core::DiagnosticSeverity as CoreDiagnosticSeverity;
 use lsp_server::{Connection, ErrorCode, Message, Notification, Request, Response};
 use lsp_types::{
     notification::{
-        DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument,
+        DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, DidSaveTextDocument,
         Notification as LspNotification, PublishDiagnostics,
     },
     request::{
@@ -17,23 +17,23 @@ use lsp_types::{
     },
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse, Command,
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
-    ExecuteCommandParams, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
-    InitializeResult, Location, NumberOrString, PublishDiagnosticsParams, ServerInfo, SymbolKind,
-    TextDocumentContentChangeEvent, Uri,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbol, DocumentSymbolParams,
+    DocumentSymbolResponse, ExecuteCommandParams, GotoDefinitionParams, GotoDefinitionResponse,
+    InitializeParams, InitializeResult, Location, NumberOrString, PublishDiagnosticsParams,
+    ServerInfo, SymbolKind, TextDocumentContentChangeEvent, Uri,
 };
 
 use crate::{
     capabilities::server_capabilities,
     handlers::{
-        code_actions::{code_actions_for, RENDER_PREVIEW_COMMAND},
+        code_actions::{code_actions_for, RENDER_LIVE_PREVIEW_COMMAND, RENDER_PREVIEW_COMMAND},
         definition::definition_at_offset,
         diagnostics::diagnostics,
         document_symbols::document_symbols,
-        execute_command::render_preview,
+        execute_command::{refresh_preview, render_preview},
     },
     position::PositionEncoding,
-    preview::{BrowserSink, PreviewSink, SystemLauncher},
+    preview::{BrowserSink, PreviewMode, PreviewSink, SystemLauncher},
     server::ServerError,
     state::{document_path, ServerState},
 };
@@ -88,6 +88,8 @@ struct ProtocolServer {
     encoding: PositionEncoding,
     renderer: Box<dyn adoc_render::Renderer>,
     sink: Box<dyn PreviewSink>,
+    /// Documents with a live preview on screen, re-rendered when they are saved.
+    live_previews: std::collections::BTreeSet<String>,
 }
 
 impl ProtocolServer {
@@ -100,10 +102,11 @@ impl ProtocolServer {
                 std::env::temp_dir().join("adoc-ls-preview"),
                 SystemLauncher,
             )),
+            live_previews: std::collections::BTreeSet::new(),
         }
     }
 
-    fn handle_request(&self, request: Request) -> Response {
+    fn handle_request(&mut self, request: Request) -> Response {
         match request.method.as_str() {
             DocumentSymbolRequest::METHOD => self
                 .request_response::<DocumentSymbolParams, _>(request, |params| {
@@ -158,6 +161,15 @@ impl ProtocolServer {
                 };
                 self.did_change(params)
             }
+            DidSaveTextDocument::METHOD => {
+                let Some(params) =
+                    decode_notification::<DidSaveTextDocumentParams>(notification.params)
+                else {
+                    return Ok(None);
+                };
+                self.refresh_live_preview(params.text_document.uri.as_str());
+                Ok(None)
+            }
             DidCloseTextDocument::METHOD => {
                 let Some(params) = decode_notification(notification.params) else {
                     return Ok(None);
@@ -203,6 +215,9 @@ impl ProtocolServer {
         params: DidCloseTextDocumentParams,
     ) -> Result<Option<Notification>, ServerError> {
         let uri = params.text_document.uri.as_str();
+        // Closing the buffer is the only signal available that a preview is finished:
+        // a browser tab closing is invisible from here.
+        self.live_previews.remove(uri);
         self.state.close(uri)?;
         Ok(Some(Notification::new(
             PublishDiagnostics::METHOD.to_owned(),
@@ -273,6 +288,17 @@ impl ProtocolServer {
         Some(DocumentSymbolResponse::Nested(symbols))
     }
 
+    /// Re-render a saved document if it has a live preview on screen.
+    ///
+    /// A failed refresh is dropped: the preview is a convenience, and a save is the wrong
+    /// moment to interrupt the author with a renderer error.
+    fn refresh_live_preview(&mut self, uri: &str) {
+        if !self.live_previews.contains(uri) {
+            return;
+        }
+        let _ = refresh_preview(&self.state, self.renderer.as_ref(), self.sink.as_ref(), uri);
+    }
+
     fn code_action_response(&self, params: &CodeActionParams) -> CodeActionResponse {
         let uri = params.text_document.uri.as_str();
         if self.state.documents.get(uri).is_none() {
@@ -296,7 +322,7 @@ impl ProtocolServer {
             .collect()
     }
 
-    fn execute_command_response(&self, request: Request) -> Response {
+    fn execute_command_response(&mut self, request: Request) -> Response {
         let id = request.id.clone();
         let params: ExecuteCommandParams = match serde_json::from_value(request.params) {
             Ok(params) => params,
@@ -305,13 +331,17 @@ impl ProtocolServer {
             }
         };
 
-        if params.command != RENDER_PREVIEW_COMMAND {
-            return Response::new_err(
-                id,
-                ErrorCode::InvalidParams as i32,
-                format!("unsupported command `{}`", params.command),
-            );
-        }
+        let mode = match params.command.as_str() {
+            RENDER_PREVIEW_COMMAND => PreviewMode::Static,
+            RENDER_LIVE_PREVIEW_COMMAND => PreviewMode::Live,
+            other => {
+                return Response::new_err(
+                    id,
+                    ErrorCode::InvalidParams as i32,
+                    format!("unsupported command `{other}`"),
+                )
+            }
+        };
 
         let Some(uri) = params.arguments.first().and_then(serde_json::Value::as_str) else {
             return Response::new_err(
@@ -321,8 +351,19 @@ impl ProtocolServer {
             );
         };
 
-        match render_preview(&self.state, self.renderer.as_ref(), self.sink.as_ref(), uri) {
-            Ok(artefact) => Response::new_ok(id, artefact.display().to_string()),
+        match render_preview(
+            &self.state,
+            self.renderer.as_ref(),
+            self.sink.as_ref(),
+            uri,
+            mode,
+        ) {
+            Ok(artefact) => {
+                if mode == PreviewMode::Live {
+                    self.live_previews.insert(uri.to_owned());
+                }
+                Response::new_ok(id, artefact.display().to_string())
+            }
             Err(error) => Response::new_err(id, ErrorCode::InternalError as i32, error.to_string()),
         }
     }
