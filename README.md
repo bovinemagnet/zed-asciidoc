@@ -46,9 +46,6 @@ Not implemented yet:
   so preview opens externally; see
   `docs/prd/DESIGN-Preview_Pipeline_and_Native_Rendering.md`.
 - A pure-Rust renderer. Preview currently requires the `asciidoctor` executable on `PATH`.
-- Rewriting `include::` directives that sit inside delimited blocks. The parser skips
-  verbatim blocks, so a code sample pulled in with `include::example$q.sql[]` inside a
-  `[source]` block is not rewritten and renders unresolved.
 
 ## Development
 

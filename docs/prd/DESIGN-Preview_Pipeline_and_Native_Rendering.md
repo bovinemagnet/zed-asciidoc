@@ -235,7 +235,7 @@ Select at runtime rather than compile time: attempt `NativeRenderer`, fall back 
 with an escape hatch, and allows fidelity to be measured against real documents instead of
 estimated.
 
-### 5.4a Two obstacles found in implementation
+### 5.4a Obstacles found in implementation
 
 Rendering an Antora page through stock Asciidoctor fails twice over, and both were only
 visible end to end — unit tests with a mock renderer passed throughout.
@@ -256,8 +256,9 @@ visible end to end — unit tests with a mock renderer passed throughout.
    (see 4 below) the jail was gone and the widening unnecessary, so nothing sets
    `base_dir`; the renderer option remains for other callers.
 
-3. **Family-directory attributes.** Antora also sets `partialsdir`, `examplesdir`,
-   `attachmentsdir` and `imagesdir`, and documents commonly write
+3. **Family-directory attributes.** Antora also sets `moduledir`, `pagesdir`,
+   `partialsdir`, `examplesdir`, `attachmentsdir` and `imagesdir`, and documents commonly
+   write
    `include::{partialsdir}/note.adoc[]` instead of the family-qualified form. These are
    now set to absolute paths under the module root, which additionally makes images
    resolve from a preview rendered outside the worktree.
@@ -272,12 +273,21 @@ visible end to end — unit tests with a mock renderer passed throughout.
    **This required lowering the safe mode to `unsafe`.** The copies necessarily live
    outside the component root, and every safe mode above `unsafe` jails includes to
    `base_dir`. The trade is deliberate: a preview renders the author's own files, which
-   could already include anything, so the practical exposure is unchanged. `base_dir` is
-   still set, as it remains the document's base directory.
+   could already include anything, so the practical exposure is unchanged.
 
    Cycles are bounded by a visited set held across the recursion: a partial that
    re-enters itself is referenced at its original path, so Asciidoctor stops with one
    "Unresolved directive" at the repeat instead of recursing.
+
+5. **Includes inside delimited blocks.** The parser skipped verbatim blocks entirely, so
+   `include::example$q.sql[]` inside a `[source]` block — the primary use of the
+   `example$` family — never reached the rewrite. Asciidoctor's rule, verified against
+   2.0.26, is that includes are expanded in listing (`----`), literal (`....`) and
+   passthrough (`++++`) blocks, but not in comment blocks (`////`), and not when escaped
+   with a backslash. The parser now records includes in the first three while still
+   ignoring every other construct there, and honours the backslash escape for all macros.
+   Those includes consequently gain go-to-definition and diagnostics too; measured against
+   200 files of the reference corpus, the change adds no diagnostics.
 
 ### 5.4 Antora is an advantage, not a gap
 
