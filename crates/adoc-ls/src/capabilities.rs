@@ -39,3 +39,33 @@ pub(crate) fn server_capabilities(
         ..ServerCapabilities::default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::server_capabilities;
+    use crate::{
+        handlers::code_actions::{code_actions_for, LivePreview},
+        position::PositionEncoding,
+    };
+
+    /// A client may silently drop a code action whose command is not advertised — Zed
+    /// does — so the two lists have to stay in step. Nothing is logged when they do not.
+    #[test]
+    fn every_code_action_command_is_advertised() {
+        let capabilities = server_capabilities(PositionEncoding::Utf16);
+        let advertised = capabilities
+            .execute_command_provider
+            .expect("execute command provider")
+            .commands;
+
+        for live in [LivePreview::Inactive, LivePreview::Active] {
+            for action in code_actions_for("file:///docs/guide.adoc", live) {
+                assert!(
+                    advertised.iter().any(|command| command == action.command),
+                    "`{}` is offered as a code action but not advertised: {advertised:?}",
+                    action.command
+                );
+            }
+        }
+    }
+}

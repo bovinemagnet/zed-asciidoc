@@ -151,3 +151,82 @@ fn binary_advertises_the_preview_command() {
         .expect("send exit");
     assert!(child.wait().expect("wait for adoc-ls").success());
 }
+
+/// The mirror of the capability check: a command may be advertised, offered by a code
+/// action, and still not routed. Executing each one proves it reaches a handler — the
+/// document is deliberately not open, so the expected outcome is that specific failure
+/// rather than "unsupported command".
+#[test]
+fn binary_routes_every_advertised_command() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_adoc-ls"))
+        .arg("--stdio")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("start adoc-ls");
+    let mut stdin = child.stdin.take().expect("child stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("child stdout"));
+
+    Message::Request(Request::new(
+        RequestId::from(1),
+        Initialize::METHOD.to_owned(),
+        InitializeParams::default(),
+    ))
+    .write(&mut stdin)
+    .expect("send initialize");
+    let Message::Response(response) = read_message(&mut stdout) else {
+        panic!("expected an initialize response");
+    };
+    let result: InitializeResult =
+        serde_json::from_value(response.response_result.expect("initialize succeeded"))
+            .expect("decode result");
+    let commands = result
+        .capabilities
+        .execute_command_provider
+        .expect("execute command provider")
+        .commands;
+    Message::Notification(Notification::new(
+        Initialized::METHOD.to_owned(),
+        InitializedParams {},
+    ))
+    .write(&mut stdin)
+    .expect("send initialized");
+
+    for (index, command) in commands.iter().enumerate() {
+        let id = RequestId::from(index as i32 + 2);
+        Message::Request(Request::new(
+            id.clone(),
+            "workspace/executeCommand".to_owned(),
+            serde_json::json!({
+                "command": command,
+                "arguments": ["file:///not/open.adoc"],
+            }),
+        ))
+        .write(&mut stdin)
+        .expect("send executeCommand");
+
+        let Message::Response(response) = read_message(&mut stdout) else {
+            panic!("expected a response for {command}");
+        };
+        if let Err(error) = response.response_result {
+            assert!(
+                !error.message.contains("unsupported command"),
+                "`{command}` is advertised but not routed: {}",
+                error.message
+            );
+        }
+    }
+
+    Message::Request(Request::new(
+        RequestId::from(1000),
+        Shutdown::METHOD.to_owned(),
+        (),
+    ))
+    .write(&mut stdin)
+    .expect("send shutdown");
+    let _ = read_message(&mut stdout);
+    Message::Notification(Notification::new(Exit::METHOD.to_owned(), ()))
+        .write(&mut stdin)
+        .expect("send exit");
+    assert!(child.wait().expect("wait for adoc-ls").success());
+}
