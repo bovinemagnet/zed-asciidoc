@@ -12,6 +12,8 @@ Implemented:
 - Thin registered Zed Wasm extension entry point.
 - Zed language registration for `.adoc`, `.asciidoc`, and `.ad`.
 - Pinned block and inline Tree-sitter grammars with highlighting, outline, and source-block injection queries.
+  The grammars come from a fork carrying a `table_header_row` node, which the upstream grammar does not
+  expose, so a table's header row can be styled apart from its body.
 - Core AsciiDoc domain types.
 - Minimal semantic parser for titles, sections, attributes, anchors, xrefs, and includes.
 - Replacement-based workspace index and basic file/anchor definition resolution.
