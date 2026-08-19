@@ -36,6 +36,7 @@ dependencies = [
  "adoc-core",
  "adoc-index",
  "adoc-parser",
+ "adoc-render",
  "lsp-server",
  "lsp-types",
  "serde",

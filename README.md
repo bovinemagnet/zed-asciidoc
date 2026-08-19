@@ -26,13 +26,19 @@ Implemented:
 - Same-component Antora xref/include navigation and unknown module/resource diagnostics; components
   absent from the workspace are assumed to come from elsewhere in the playbook and are not reported.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
+- HTML preview via the `AsciiDoc: render preview` code action, which runs the
+  `adoc.renderPreview` command, renders the open buffer (saved or not) with Asciidoctor,
+  merges Antora page attributes, and opens the result in the default browser.
 - Small deterministic fixtures.
 
 Not implemented yet:
 
 - Cross-component/version Antora selection and `antora.yml` editor diagnostics.
-- Completion, rename, references, and code actions.
-- Preview UI and renderer-to-editor integration.
+- Completion, rename, and references. The only code action is the preview command above.
+- A preview pane inside Zed. The extension API exposes no webview or preview capability,
+  so preview opens externally; see
+  `docs/prd/DESIGN-Preview_Pipeline_and_Native_Rendering.md`.
+- A pure-Rust renderer. Preview currently requires the `asciidoctor` executable on `PATH`.
 
 ## Development
 
