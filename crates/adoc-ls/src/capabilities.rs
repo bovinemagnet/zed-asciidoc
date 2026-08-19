@@ -4,7 +4,9 @@ use lsp_types::{
     TextDocumentSyncSaveOptions,
 };
 
-use crate::handlers::code_actions::RENDER_PREVIEW_COMMAND;
+use crate::handlers::code_actions::{
+    RENDER_LIVE_PREVIEW_COMMAND, RENDER_PREVIEW_COMMAND, STOP_LIVE_PREVIEW_COMMAND,
+};
 
 #[must_use]
 pub(crate) fn server_capabilities(
@@ -25,7 +27,13 @@ pub(crate) fn server_capabilities(
         definition_provider: Some(OneOf::Left(true)),
         code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
         execute_command_provider: Some(ExecuteCommandOptions {
-            commands: vec![RENDER_PREVIEW_COMMAND.to_owned()],
+            // A client may drop a code action whose command is missing from this list —
+            // Zed does — so every command a code action carries belongs here.
+            commands: vec![
+                RENDER_PREVIEW_COMMAND.to_owned(),
+                RENDER_LIVE_PREVIEW_COMMAND.to_owned(),
+                STOP_LIVE_PREVIEW_COMMAND.to_owned(),
+            ],
             ..ExecuteCommandOptions::default()
         }),
         ..ServerCapabilities::default()

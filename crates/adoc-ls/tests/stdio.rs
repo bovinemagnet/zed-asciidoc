@@ -107,11 +107,29 @@ fn binary_advertises_the_preview_command() {
         .execute_command_provider
         .expect("execute command provider")
         .commands;
+    // Zed drops any code action whose command is absent from this list, so every
+    // command a code action carries has to be advertised here.
+    for expected in [
+        "adoc.renderPreview",
+        "adoc.renderLivePreview",
+        "adoc.stopLivePreview",
+    ] {
+        assert!(
+            commands.iter().any(|command| command == expected),
+            "{expected} missing from {commands:?}"
+        );
+    }
+
+    // A live preview re-renders on save, which a client only sends if asked.
+    let sync = capabilities
+        .text_document_sync
+        .expect("text document sync capability");
+    let lsp_types::TextDocumentSyncCapability::Options(options) = sync else {
+        panic!("expected sync options rather than a bare kind");
+    };
     assert!(
-        commands
-            .iter()
-            .any(|command| command == "adoc.renderPreview"),
-        "{commands:?}"
+        options.save.is_some(),
+        "save notifications must be requested"
     );
 
     Message::Notification(Notification::new(
