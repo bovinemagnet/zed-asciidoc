@@ -26,7 +26,10 @@ use lsp_types::{
 use crate::{
     capabilities::server_capabilities,
     handlers::{
-        code_actions::{code_actions_for, RENDER_LIVE_PREVIEW_COMMAND, RENDER_PREVIEW_COMMAND},
+        code_actions::{
+            code_actions_for, LivePreview, RENDER_LIVE_PREVIEW_COMMAND, RENDER_PREVIEW_COMMAND,
+            STOP_LIVE_PREVIEW_COMMAND,
+        },
         definition::definition_at_offset,
         diagnostics::diagnostics,
         document_symbols::document_symbols,
@@ -305,7 +308,13 @@ impl ProtocolServer {
             return Vec::new();
         }
 
-        code_actions_for(uri)
+        let live = if self.live_previews.contains(uri) {
+            LivePreview::Active
+        } else {
+            LivePreview::Inactive
+        };
+
+        code_actions_for(uri, live)
             .into_iter()
             .map(|action| {
                 CodeActionOrCommand::CodeAction(CodeAction {
@@ -331,9 +340,11 @@ impl ProtocolServer {
             }
         };
 
-        let mode = match params.command.as_str() {
+        let command = params.command.clone();
+        let mode = match command.as_str() {
             RENDER_PREVIEW_COMMAND => PreviewMode::Static,
             RENDER_LIVE_PREVIEW_COMMAND => PreviewMode::Live,
+            STOP_LIVE_PREVIEW_COMMAND => PreviewMode::Static,
             other => {
                 return Response::new_err(
                     id,
@@ -350,6 +361,12 @@ impl ProtocolServer {
                 format!("`{RENDER_PREVIEW_COMMAND}` requires a document URI argument"),
             );
         };
+
+        if command == STOP_LIVE_PREVIEW_COMMAND {
+            // The artefact stays as it is; only the following stops.
+            self.live_previews.remove(uri);
+            return Response::new_ok(id, serde_json::Value::Null);
+        }
 
         match render_preview(
             &self.state,

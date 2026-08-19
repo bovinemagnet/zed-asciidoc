@@ -27,8 +27,9 @@ Implemented:
   absent from the workspace are assumed to come from elsewhere in the playbook and are not reported.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via two code actions. `AsciiDoc: render preview` renders once;
-  `AsciiDoc: render live preview` additionally re-renders whenever the document is saved,
-  until its buffer closes, and embeds a reloader so the page keeps up. Both render the
+  `AsciiDoc: render live preview` additionally re-renders whenever the document is saved
+  and embeds a reloader so the page keeps up; while a document is being followed that
+  action becomes `AsciiDoc: stop live preview`, and closing the buffer stops it too. Both render the
   open buffer (saved or not) with Asciidoctor,
   merges Antora page and family-directory attributes (`moduledir`, `pagesdir`,
   `partialsdir`, `examplesdir`, `attachmentsdir`, `imagesdir`), rewrites
