@@ -1,18 +1,21 @@
+; The injected language is looked up by its declared name, so this must match `name` in
+; languages/asciidoc-inline/config.toml exactly (case aside); an underscored or
+; abbreviated spelling resolves to no language at all and the injection is silently dropped.
 ((block_macro
   (target) @injection.content)
-  (#set! injection.language "asciidoc_inline"))
+  (#set! injection.language "AsciiDoc Inline"))
 
 ((table_cell
   (table_cell_content) @injection.content)
-  (#set! injection.language "asciidoc_inline"))
+  (#set! injection.language "AsciiDoc Inline"))
 
 ((paragraph) @injection.content
   (#set! injection.include-children)
-  (#set! injection.language "asciidoc_inline"))
+  (#set! injection.language "AsciiDoc Inline"))
 
 ((line) @injection.content
   (#set! injection.include-children)
-  (#set! injection.language "asciidoc_inline"))
+  (#set! injection.language "AsciiDoc Inline"))
 
 ((section_block
   (element_attr

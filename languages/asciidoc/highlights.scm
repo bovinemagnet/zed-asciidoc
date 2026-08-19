@@ -1,3 +1,8 @@
+; The `=` of a document title is an external token outside the `titleN` wrapper that carries
+; the marker for every other level, so it needs capturing in its own right.
+(document_title
+  (title_h0_marker) @title)
+
 (document_title
   (line) @title)
 
@@ -53,6 +58,14 @@
   (list_marker_alpha)
   (description_marker)
 ] @punctuation.list_marker
+
+; Per-cell specifiers such as `h|`, `m|` and `2+|`.
+(table_cell_attr) @attribute
+
+; The header row AsciiDoc gives a table whose first line is followed by a blank one.
+(table_header_row
+  (table_cell
+    (table_cell_content) @emphasis.strong))
 
 [
   (table_block_marker)

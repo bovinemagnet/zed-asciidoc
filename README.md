@@ -12,14 +12,19 @@ Implemented:
 - Thin registered Zed Wasm extension entry point.
 - Zed language registration for `.adoc`, `.asciidoc`, and `.ad`.
 - Pinned block and inline Tree-sitter grammars with highlighting, outline, and source-block injection queries.
+  The grammars come from a fork carrying a `table_header_row` node, which the upstream grammar does not
+  expose, so a table's header row can be styled apart from its body.
 - Core AsciiDoc domain types.
 - Minimal semantic parser for titles, sections, attributes, anchors, xrefs, and includes.
 - Replacement-based workspace index and basic file/anchor definition resolution.
 - Renderer abstraction and direct system Asciidoctor adapter for file or unsaved source, safe modes, attributes, and custom stylesheets.
 - `adoc-ls` stdio transport with incremental synchronization, document symbols, diagnostics, and Go to Definition.
 - Workspace indexing and conservative diagnostics for missing local xrefs, anchors, and includes.
+- Reference resolution that follows Asciidoctor and Antora semantics: module-root-relative page IDs,
+  implicit and natural section references, anchors declared in included partials, and bibliography anchors.
 - Antora descriptor parsing plus deterministic component, module, and resource-family discovery.
-- Same-component Antora xref/include navigation and unknown module/resource diagnostics.
+- Same-component Antora xref/include navigation and unknown module/resource diagnostics; components
+  absent from the workspace are assumed to come from elsewhere in the playbook and are not reported.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - Small deterministic fixtures.
 
