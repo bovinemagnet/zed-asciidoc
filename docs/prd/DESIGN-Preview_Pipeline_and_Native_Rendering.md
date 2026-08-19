@@ -250,9 +250,16 @@ visible end to end — unit tests with a mock renderer passed throughout.
    `RenderRequest::base_dir` now carries the Antora component root, passed as
    `--base-dir`.
 
+3. **Family-directory attributes.** Antora also sets `partialsdir`, `examplesdir`,
+   `attachmentsdir` and `imagesdir`, and documents commonly write
+   `include::{partialsdir}/note.adoc[]` instead of the family-qualified form. These are
+   now set to absolute paths under the module root, which additionally makes images
+   resolve from a preview rendered outside the worktree.
+
 Known limitation: only the outermost document is rewritten, so a family-qualified include
-*inside* an included partial remains unresolved. Handling that needs the rewrite to
-recurse through included files.
+*inside* an included partial remains unresolved. Handling it needs rewritten copies of the
+included files, which cannot live in the worktree and cannot be reached from a temporary
+directory without lowering the safe mode below `safe` — see §8.
 
 ### 5.4 Antora is an advantage, not a gap
 
@@ -317,6 +324,10 @@ then evaluate Part C.
 
 ## 8. Open questions
 
+- Nested family-qualified includes need rewritten copies of the included files. Those
+  cannot be written into the worktree, and Asciidoctor's jail refuses to read them from a
+  temporary directory at any safe mode above `unsafe`. Choosing between preview fidelity
+  and safe mode is a product decision, not a technical one.
 - Where should preview artefacts be written — a temporary directory, or alongside the
   source? Temporary avoids polluting worktrees but breaks relative image references.
 - Should the preview refresh on `didChange`, or only on explicit invocation? Refresh
