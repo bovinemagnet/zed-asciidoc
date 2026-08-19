@@ -28,10 +28,11 @@ Implemented:
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via the `AsciiDoc: render preview` code action, which runs the
   `adoc.renderPreview` command, renders the open buffer (saved or not) with Asciidoctor,
-  merges Antora page and family-directory attributes (`partialsdir`, `examplesdir`,
-  `attachmentsdir`, `imagesdir`), rewrites family-qualified includes such as
-  `partial$note.adoc` to absolute paths, widens Asciidoctor's safe-mode jail to the Antora
-  component root, and opens the result in the default browser. Includes nested inside an
+  merges Antora page and family-directory attributes (`moduledir`, `pagesdir`,
+  `partialsdir`, `examplesdir`, `attachmentsdir`, `imagesdir`), rewrites
+  family-qualified includes such as
+  `partial$note.adoc` to absolute paths,
+  and opens the result in the default browser. Includes nested inside an
   included file are rewritten too, via copies in a scratch directory; reading those
   copies is why preview renders with Asciidoctor's `unsafe` safe mode. Cyclic includes
   stop at the repeat rather than recursing.
@@ -45,6 +46,9 @@ Not implemented yet:
   so preview opens externally; see
   `docs/prd/DESIGN-Preview_Pipeline_and_Native_Rendering.md`.
 - A pure-Rust renderer. Preview currently requires the `asciidoctor` executable on `PATH`.
+- Rewriting `include::` directives that sit inside delimited blocks. The parser skips
+  verbatim blocks, so a code sample pulled in with `include::example$q.sql[]` inside a
+  `[source]` block is not rewritten and renders unresolved.
 
 ## Development
 

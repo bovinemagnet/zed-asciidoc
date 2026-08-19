@@ -247,8 +247,14 @@ visible end to end — unit tests with a mock renderer passed throughout.
    backend-independent and will serve a Rust renderer equally.
 2. **The safe-mode jail.** Rewriting alone is not enough: Asciidoctor refuses includes
    outside its base directory, and an Antora page's partials live in a sibling directory.
-   `RenderRequest::base_dir` now carries the Antora component root, passed as
-   `--base-dir`.
+   `RenderRequest` gained `base_dir` for this, initially set to the Antora component root.
+
+   Corpus validation then showed that to be a mistake. `base_dir` also decides what a
+   relative include resolves against, and a document rendered from stdin has no directory
+   of its own, so pointing it at the component root broke `include::_attributes.adoc[]`
+   beside the page — 267 uses in the reference corpus. Once preview moved to `unsafe`
+   (see 4 below) the jail was gone and the widening unnecessary, so nothing sets
+   `base_dir`; the renderer option remains for other callers.
 
 3. **Family-directory attributes.** Antora also sets `partialsdir`, `examplesdir`,
    `attachmentsdir` and `imagesdir`, and documents commonly write
