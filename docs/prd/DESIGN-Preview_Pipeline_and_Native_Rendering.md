@@ -256,10 +256,22 @@ visible end to end — unit tests with a mock renderer passed throughout.
    now set to absolute paths under the module root, which additionally makes images
    resolve from a preview rendered outside the worktree.
 
-Known limitation: only the outermost document is rewritten, so a family-qualified include
-*inside* an included partial remains unresolved. Handling it needs rewritten copies of the
-included files, which cannot live in the worktree and cannot be reached from a temporary
-directory without lowering the safe mode below `safe` — see §8.
+4. **Nested includes.** An included partial may itself use family-qualified includes, and
+   Asciidoctor reads that partial from disk, so rewriting the outermost document is not
+   enough. Files needing a rewrite are copied into a scratch directory with every include
+   made absolute — including relative ones, since a copy no longer sits beside the files
+   it names — and the including document points at the copy. A file whose includes all
+   resolve as written is referenced in place, so nothing is copied needlessly.
+
+   **This required lowering the safe mode to `unsafe`.** The copies necessarily live
+   outside the component root, and every safe mode above `unsafe` jails includes to
+   `base_dir`. The trade is deliberate: a preview renders the author's own files, which
+   could already include anything, so the practical exposure is unchanged. `base_dir` is
+   still set, as it remains the document's base directory.
+
+   Cycles are bounded by a visited set held across the recursion: a partial that
+   re-enters itself is referenced at its original path, so Asciidoctor stops with one
+   "Unresolved directive" at the repeat instead of recursing.
 
 ### 5.4 Antora is an advantage, not a gap
 
@@ -324,10 +336,6 @@ then evaluate Part C.
 
 ## 8. Open questions
 
-- Nested family-qualified includes need rewritten copies of the included files. Those
-  cannot be written into the worktree, and Asciidoctor's jail refuses to read them from a
-  temporary directory at any safe mode above `unsafe`. Choosing between preview fidelity
-  and safe mode is a product decision, not a technical one.
 - Where should preview artefacts be written — a temporary directory, or alongside the
   source? Temporary avoids polluting worktrees but breaks relative image references.
 - Should the preview refresh on `didChange`, or only on explicit invocation? Refresh

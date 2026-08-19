@@ -31,8 +31,10 @@ Implemented:
   merges Antora page and family-directory attributes (`partialsdir`, `examplesdir`,
   `attachmentsdir`, `imagesdir`), rewrites family-qualified includes such as
   `partial$note.adoc` to absolute paths, widens Asciidoctor's safe-mode jail to the Antora
-  component root, and opens the result in the default browser. Family-qualified includes
-  nested inside an included file are not yet rewritten.
+  component root, and opens the result in the default browser. Includes nested inside an
+  included file are rewritten too, via copies in a scratch directory; reading those
+  copies is why preview renders with Asciidoctor's `unsafe` safe mode. Cyclic includes
+  stop at the repeat rather than recursing.
 - Small deterministic fixtures.
 
 Not implemented yet:
