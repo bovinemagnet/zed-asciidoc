@@ -28,7 +28,10 @@ Implemented:
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via the `AsciiDoc: render preview` code action, which runs the
   `adoc.renderPreview` command, renders the open buffer (saved or not) with Asciidoctor,
-  merges Antora page attributes, and opens the result in the default browser.
+  merges Antora page attributes, rewrites family-qualified includes such as
+  `partial$note.adoc` to absolute paths, widens Asciidoctor's safe-mode jail to the Antora
+  component root, and opens the result in the default browser. Family-qualified includes
+  nested inside an included file are not yet rewritten.
 - Small deterministic fixtures.
 
 Not implemented yet:

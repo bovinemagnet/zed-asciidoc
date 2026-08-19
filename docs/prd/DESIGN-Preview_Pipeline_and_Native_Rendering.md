@@ -235,6 +235,25 @@ Select at runtime rather than compile time: attempt `NativeRenderer`, fall back 
 with an escape hatch, and allows fidelity to be measured against real documents instead of
 estimated.
 
+### 5.4a Two obstacles found in implementation
+
+Rendering an Antora page through stock Asciidoctor fails twice over, and both were only
+visible end to end — unit tests with a mock renderer passed throughout.
+
+1. **Family-qualified includes.** `include::partial$note.adoc[]` renders as
+   `Unresolved directive`; Asciidoctor has no notion of Antora's resource families.
+   Resolved by rewriting such targets to absolute paths before rendering, using
+   `parse_resource_id` and `AntoraResolver` — see `handlers/render_source.rs`. This is
+   backend-independent and will serve a Rust renderer equally.
+2. **The safe-mode jail.** Rewriting alone is not enough: Asciidoctor refuses includes
+   outside its base directory, and an Antora page's partials live in a sibling directory.
+   `RenderRequest::base_dir` now carries the Antora component root, passed as
+   `--base-dir`.
+
+Known limitation: only the outermost document is rewritten, so a family-qualified include
+*inside* an included partial remains unresolved. Handling that needs the rewrite to
+recurse through included files.
+
 ### 5.4 Antora is an advantage, not a gap
 
 Antora does not use stock Asciidoctor; it drives asciidoctor.js with extensions that

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use adoc_render::{RenderRequest, Renderer};
 
 use crate::{
+    handlers::render_source::source_for_render,
     preview::{PreviewError, PreviewSink},
     state::{document_path, ServerState},
 };
@@ -28,11 +29,26 @@ pub fn render_preview(
         .ok_or_else(|| PreviewError::NotOpen(uri.to_owned()))?;
 
     let source = document_path(uri);
-    let mut request = RenderRequest::from_source(source.clone(), open.document.text.clone());
+    let text = source_for_render(&open.document, &state.antora, &source);
+    let mut request = RenderRequest::from_source(source.clone(), text);
     request.attributes.extend(antora_attributes(state, &source));
+    request.base_dir = antora_component_root(state, &source);
 
     let output = renderer.render(&request)?;
     sink.deliver(&output, &source)
+}
+
+/// Root of the Antora component owning `source`, if any.
+///
+/// Asciidoctor's safe mode refuses includes outside its base directory. An Antora page
+/// includes partials from sibling directories, so the jail has to be the component root
+/// rather than the page's own directory.
+fn antora_component_root(state: &ServerState, source: &Path) -> Option<PathBuf> {
+    let context = state.antora.context_for_path(source)?;
+    let component = state
+        .antora
+        .component(&context.component, context.version.as_deref())?;
+    Some(component.root.clone())
 }
 
 /// Antora page attributes for `source`, empty when the file is not in an Antora module.
@@ -187,6 +203,77 @@ mod tests {
             .expect("a request")
             .attributes
             .is_empty());
+    }
+
+    #[test]
+    fn resolves_antora_includes_before_rendering() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/antora-single-component");
+        let page = root.join("modules/security/pages/authentication.adoc");
+        let uri = format!("file://{}", page.display());
+
+        let mut state = ServerState::default();
+        state.index_workspace(vec![root]).expect("index fixture");
+        state.open(
+            &uri,
+            "= Authentication\n\ninclude::partial$token-note.adoc[]\n",
+            1,
+        );
+
+        let renderer = RecordingRenderer::default();
+        render_preview(&state, &renderer, &RecordingSink::default(), &uri).expect("render");
+
+        let source = renderer
+            .last_request()
+            .expect("a request")
+            .source_text
+            .expect("source text");
+        assert!(!source.contains("partial$"), "{source}");
+        assert!(
+            source.contains("modules/security/partials/token-note.adoc"),
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn widens_the_safe_mode_jail_to_the_antora_component_root() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/antora-single-component");
+        let page = root.join("modules/security/pages/authentication.adoc");
+        let uri = format!("file://{}", page.display());
+
+        let mut state = ServerState::default();
+        state.index_workspace(vec![root]).expect("index fixture");
+        state.open(&uri, "= Authentication\n", 1);
+
+        let renderer = RecordingRenderer::default();
+        render_preview(&state, &renderer, &RecordingSink::default(), &uri).expect("render");
+
+        let base_dir = renderer
+            .last_request()
+            .expect("a request")
+            .base_dir
+            .expect("an Antora page needs a widened jail");
+        assert!(
+            base_dir.join("antora.yml").is_file(),
+            "{}",
+            base_dir.display()
+        );
+    }
+
+    #[test]
+    fn a_document_outside_an_antora_module_keeps_the_default_jail() {
+        let uri = "file:///elsewhere/guide.adoc";
+        let state = state_with(uri, "= Title\n");
+
+        let renderer = RecordingRenderer::default();
+        render_preview(&state, &renderer, &RecordingSink::default(), uri).expect("render");
+
+        assert!(renderer
+            .last_request()
+            .expect("a request")
+            .base_dir
+            .is_none());
     }
 
     /// A renderer that captures the request it was given.
