@@ -41,7 +41,7 @@ Copied verbatim from `CLAUDE.md` and the spec. Every task's requirements implici
 | `crates/adoc-parser/src/parser.rs` | **Modify.** Import `COMMENT_DELIMITER` from `line_parser` instead of declaring it. |
 | `crates/adoc-parser/src/lib.rs` | **Modify.** `mod completion;` and re-export its three public items. |
 | `crates/adoc-antora/src/catalog.rs` | **Modify.** Add `resources_in` and `modules_of` range enumerators. |
-| `crates/adoc-index/src/index.rs` | **Modify.** Add `anchors_in` and `files_under` range enumerators. |
+| `crates/adoc-index/src/index.rs` | **Modify.** Add the `anchors_in` range enumerator. |
 | `crates/adoc-index/src/workspace.rs` | **Modify.** Add `list_directory` and `DirectoryEntry` — the only filesystem read on the completion path. |
 | `crates/adoc-index/src/lib.rs` | **Modify.** Re-export `DirectoryEntry` and `list_directory`. |
 | `crates/adoc-ls/src/handlers/definition.rs` | **Modify.** Add `reference_target_path`, so anchor completion resolves a target through the same order Go to Definition uses. |
@@ -659,7 +659,7 @@ git commit -m "feat(antora): enumerate a module family without scanning the cata
 
 ---
 
-### Task 3: Range enumerators and directory listing in `adoc-index`
+### Task 3: Anchor enumeration and directory listing in `adoc-index`
 
 **Files:**
 - Modify: `crates/adoc-index/src/index.rs`
@@ -672,15 +672,18 @@ git commit -m "feat(antora): enumerate a module family without scanning the cata
   ```rust
   impl WorkspaceIndex {
       pub fn anchors_in(&self, path: &Path) -> impl Iterator<Item = (&str, &AnchorLocation)>
-      pub fn files_under(&self, directory: &Path) -> impl Iterator<Item = &FileEntry>
   }
   pub struct DirectoryEntry { pub name: String, pub is_directory: bool }
   pub fn list_directory(directory: &Path) -> Vec<DirectoryEntry>
   ```
 
-**Background:** `AnchorKey` orders *path → id*, and `PathBuf` compares component-wise, so both enumerators are contiguous ranges. `anchors_in` yields each id once, taking the first location, which matches `resolve_anchor` returning `locations.first()`. `list_directory` is the *only* filesystem read on the completion path: the index holds `.adoc` files only, but `include::../code/query.sql[]` is ordinary AsciiDoc.
+**Background:** `AnchorKey` orders *path → id*, so `anchors_in` is a contiguous range. It yields each id once, taking the first location, which matches `resolve_anchor` returning `locations.first()`. `list_directory` is the *only* filesystem read on the completion path: the index holds `.adoc` files only, but `include::../code/query.sql[]` is ordinary AsciiDoc.
 
-- [ ] **Step 1: Write the failing tests for the index enumerators**
+Note the index registers several ids per section — the title, Antora's `getting-started` form,
+Asciidoctor's `_getting_started` form, and an alphanumeric form — so that resolution is forgiving.
+`anchors_in` reports all of them; collapsing them to one candidate per section is Task 4's job.
+
+- [ ] **Step 1: Write the failing test for the anchor enumerator**
 
 Append inside `crates/adoc-index/src/index.rs`'s `mod tests`:
 
@@ -707,35 +710,14 @@ Append inside `crates/adoc-index/src/index.rs`'s `mod tests`:
             "another file's anchors must not leak in"
         );
     }
-
-    #[test]
-    fn enumerates_the_files_beneath_a_directory() {
-        let mut index = WorkspaceIndex::new();
-        index.index_source(PathBuf::from("docs/guides/one.adoc"), "= One\n");
-        index.index_source(PathBuf::from("docs/guides/two.adoc"), "= Two\n");
-        index.index_source(PathBuf::from("docs/reference/three.adoc"), "= Three\n");
-
-        let paths: Vec<_> = index
-            .files_under(Path::new("docs/guides"))
-            .map(|entry| entry.path.clone())
-            .collect();
-
-        assert_eq!(
-            paths,
-            vec![
-                PathBuf::from("docs/guides/one.adoc"),
-                PathBuf::from("docs/guides/two.adoc"),
-            ]
-        );
-    }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [ ] **Step 2: Run the test to verify it fails**
 
 Run: `cargo test -p adoc-index enumerates`
-Expected: compile failure — no method named `anchors_in` / `files_under`.
+Expected: compile failure — no method named `anchors_in`.
 
-- [ ] **Step 3: Write the index enumerators**
+- [ ] **Step 3: Write the anchor enumerator**
 
 Add to `impl WorkspaceIndex` in `crates/adoc-index/src/index.rs`, beside `resolve_anchor`:
 
@@ -758,21 +740,12 @@ Add to `impl WorkspaceIndex` in `crates/adoc-index/src/index.rs`, beside `resolv
                     .map(|location| (key.id.as_str(), location))
             })
     }
-
-    /// Every indexed file beneath a directory, in path order.
-    pub fn files_under(&self, directory: &Path) -> impl Iterator<Item = &FileEntry> {
-        let directory = normalize_path(directory);
-        self.files
-            .range(directory.clone()..)
-            .take_while(move |(path, _)| path.starts_with(&directory))
-            .map(|(_, entry)| entry)
-    }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cargo test -p adoc-index enumerates`
-Expected: PASS, 2 tests.
+Expected: PASS.
 
 - [ ] **Step 5: Write the failing test for `list_directory`**
 
@@ -887,7 +860,7 @@ Expected: PASS, existing tests plus the 4 new ones.
 
 ```bash
 git add crates/adoc-index/src/index.rs crates/adoc-index/src/workspace.rs crates/adoc-index/src/lib.rs
-git commit -m "feat(index): enumerate anchors, files and directory entries for completion"
+git commit -m "feat(index): enumerate anchors and directory entries for completion"
 ```
 
 ---
@@ -911,7 +884,7 @@ git commit -m "feat(index): enumerate anchors, files and directory entries for c
       pub kind: CandidateKind,
       pub range: SourceRange,
   }
-  pub enum CandidateKind { Page, Resource, Module, Family, Directory, Anchor }
+  pub enum CandidateKind { Page, Resource, Family, Directory, Anchor }
   pub fn completion_at_offset(index: &WorkspaceIndex, antora: &AntoraCatalog,
                               current_path: &Path, document: &Document,
                               offset: usize) -> Vec<Candidate>
@@ -921,6 +894,11 @@ git commit -m "feat(index): enumerate anchors, files and directory entries for c
   ```
 
 **Background:** `label` is what gets inserted; the `TextEdit` in Task 5 replaces `range` with it. Anchor contexts come first because they exercise the whole shape — context in, filtered candidates out — with the least machinery. `reference_target_path` lives in `definition.rs` so that "which file does this target name" has exactly one answer in the codebase.
+
+`SourceRange` must be usable as a `BTreeMap` key for the grouping below. It already derives
+`Clone, Copy, Debug, Eq, PartialEq`; if it lacks `Ord`/`PartialOrd`, add those derives to it in
+`crates/adoc-core/src/document.rs` as part of this task — it is a pair of byte offsets, so the
+derived ordering is meaningful and nothing else depends on it not existing.
 
 - [ ] **Step 1: Write the failing test for local anchors**
 
@@ -958,6 +936,52 @@ mod tests {
 
         assert!(labels.contains(&"intro".to_owned()));
         assert!(labels.contains(&"detail".to_owned()));
+    }
+
+    #[test]
+    fn offers_one_candidate_per_section_not_one_per_id_form() {
+        // The index registers `Detail`, `detail`, `_detail` and `detail` again so that
+        // resolution is forgiving. Completion must collapse them to the anchor as written.
+        let path = Path::new("/docs/guide.adoc");
+        let text = "[[intro]]\n== Intro\n\n[[detail]]\n== Detail\n\nSee <<";
+        let mut index = WorkspaceIndex::new();
+        index.index_source(path, text);
+        let document = parse("file:///docs/guide.adoc", text).document;
+
+        let labels: Vec<_> = completion_at_offset(
+            &index,
+            &AntoraCatalog::new(),
+            path,
+            &document,
+            text.len(),
+        )
+        .into_iter()
+        .map(|candidate| candidate.label)
+        .collect();
+
+        assert_eq!(labels, vec!["detail".to_owned(), "intro".to_owned()]);
+    }
+
+    #[test]
+    fn prefers_the_generated_id_for_a_section_with_no_explicit_anchor() {
+        let path = Path::new("/docs/guide.adoc");
+        let text = "== Getting Started\n\nSee <<";
+        let mut index = WorkspaceIndex::new();
+        index.index_source(path, text);
+        let document = parse("file:///docs/guide.adoc", text).document;
+
+        let labels: Vec<_> = completion_at_offset(
+            &index,
+            &AntoraCatalog::new(),
+            path,
+            &document,
+            text.len(),
+        )
+        .into_iter()
+        .map(|candidate| candidate.label)
+        .collect();
+
+        assert_eq!(labels, vec!["getting-started".to_owned()]);
     }
 
     #[test]
@@ -1073,6 +1097,8 @@ Prepend to `crates/adoc-ls/src/handlers/completion.rs`, above the test module:
 use std::path::Path;
 
 use adoc_antora::AntoraCatalog;
+use std::collections::BTreeMap;
+
 use adoc_core::{Document, SourceRange};
 use adoc_index::WorkspaceIndex;
 use adoc_parser::{completion_context, CompletionKind};
@@ -1083,7 +1109,6 @@ use crate::handlers::definition::reference_target_path;
 pub enum CandidateKind {
     Page,
     Resource,
-    Module,
     Family,
     Directory,
     Anchor,
@@ -1133,10 +1158,30 @@ pub fn completion_at_offset(
     filter_by_prefix(candidates, &context.prefix)
 }
 
+/// One candidate per section, not one per id form.
+///
+/// The index registers every form `Section::implicit_ids` produces — the title, Antora's
+/// `getting-started` form, Asciidoctor's `_getting_started` form — so that resolution is
+/// forgiving about how a reference is written. Offering all of them would show the same
+/// section three or four times, so the forms are grouped by the location they point at and
+/// one is chosen: no leading `_`, then the lowercase form, then lexicographic order. That
+/// yields the explicit anchor where one is declared, and Antora's generated id where none is.
 fn anchor_candidates(index: &WorkspaceIndex, path: &Path, range: SourceRange) -> Vec<Candidate> {
-    index
-        .anchors_in(path)
-        .map(|(id, _)| Candidate {
+    let mut by_location: BTreeMap<SourceRange, &str> = BTreeMap::new();
+    for (id, location) in index.anchors_in(path) {
+        by_location
+            .entry(location.range)
+            .and_modify(|chosen| {
+                if preference(id) < preference(chosen) {
+                    *chosen = id;
+                }
+            })
+            .or_insert(id);
+    }
+
+    by_location
+        .into_values()
+        .map(|id| Candidate {
             label: id.to_owned(),
             detail: None,
             sort_text: format!("0{id}"),
@@ -1144,6 +1189,15 @@ fn anchor_candidates(index: &WorkspaceIndex, path: &Path, range: SourceRange) ->
             range,
         })
         .collect()
+}
+
+/// Lower sorts better. Underscore-prefixed forms last, mixed case next, then shortest.
+fn preference(id: &str) -> (bool, bool, &str) {
+    (
+        id.starts_with('_'),
+        id.chars().any(char::is_uppercase),
+        id,
+    )
 }
 
 /// Narrow the list to what the author has typed, case-insensitively and by substring.
@@ -1178,7 +1232,7 @@ pub mod render_source;
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `cargo test -p adoc-ls completion`
-Expected: PASS, 4 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 6: Commit**
 
@@ -1393,7 +1447,6 @@ And the response builder, beside `definition_response`:
             label: candidate.label.clone(),
             kind: Some(match candidate.kind {
                 CandidateKind::Page | CandidateKind::Resource => CompletionItemKind::FILE,
-                CandidateKind::Module => CompletionItemKind::MODULE,
                 CandidateKind::Family => CompletionItemKind::KEYWORD,
                 CandidateKind::Directory => CompletionItemKind::FOLDER,
                 CandidateKind::Anchor => CompletionItemKind::REFERENCE,
@@ -1762,7 +1815,7 @@ Simplify `antora_include_candidates`'s tail to drop the placeholder `context` ju
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p adoc-ls completion`
-Expected: PASS, 9 tests. Note `filter_by_prefix` runs after these builders, which is what makes `include::partial$` narrow to labels containing `partial$`, and `xref:security:` narrow to the `security` module.
+Expected: PASS, 11 tests. Note `filter_by_prefix` runs after these builders, which is what makes `include::partial$` narrow to labels containing `partial$`, and `xref:security:` narrow to the `security` module.
 
 - [ ] **Step 5: Run clippy, which is strict here**
 
@@ -1785,7 +1838,7 @@ git commit -m "feat(ls): complete Antora pages, families and module resources"
 - Test: `crates/adoc-ls/src/handlers/completion.rs` (`#[cfg(test)] mod tests`)
 
 **Interfaces:**
-- Consumes: `adoc_index::{list_directory, DirectoryEntry}` (Task 3); `WorkspaceIndex::files_under`.
+- Consumes: `adoc_index::{list_directory, DirectoryEntry}` (Task 3).
 - Produces: no new public names. The three target kinds fall back to path candidates when there is no Antora context.
 
 **Background:** The path completer splits the typed prefix at the last `/`, resolves that directory against the current document, and merges indexed `.adoc` files with one shallow `read_dir`. The `read_dir` is what makes `include::../code/query.sql[]` completable at all, since the index holds only `.adoc` files. Because everything resolves relative to the typed prefix, `../shared/` needs no special case. The label keeps the directory part the author typed, so accepting a candidate leaves a valid relative path.
@@ -1945,7 +1998,7 @@ fn path_candidates(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p adoc-ls completion`
-Expected: PASS, 12 tests.
+Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Confirm `filter_by_prefix` does not eat path candidates**
 
@@ -2164,7 +2217,7 @@ git commit -m "docs: record completion behaviour and corpus measurements"
 | Spec section | Task |
 |---|---|
 | §3.1 Context detection | Task 1 |
-| §3.2 Enumeration | Tasks 2 and 3 |
+| §3.2 Enumeration | Tasks 2 and 3 (`files_under` dropped — see pre-flight ruling F2) |
 | §3.3 Candidate assembly — anchors | Task 4 |
 | §3.3 Candidate assembly — Antora pages, families, images | Task 6 |
 | §3.3 Path completer | Tasks 3 (`list_directory`) and 7 |
@@ -2176,6 +2229,6 @@ git commit -m "docs: record completion behaviour and corpus measurements"
 
 **Placeholder scan:** no "TBD" or "handle edge cases" steps; every code step carries the code. The one genuinely open value — whether a cap is needed — is deferred to a measurement with both branches spelled out, rather than left vague.
 
-**Type consistency:** `CompletionContext`/`CompletionKind` as defined in Task 1 are consumed unchanged in Task 4. `Candidate`/`CandidateKind` as defined in Task 4 are consumed unchanged in Tasks 5, 6 and 7. `resources_in`/`modules_of` signatures in Task 2 match their call sites in Task 6. `anchors_in`/`files_under`/`list_directory`/`DirectoryEntry` in Task 3 match their call sites in Tasks 4 and 7. `reference_target_path` in Task 4 is used only in Task 4.
+**Type consistency:** `CompletionContext`/`CompletionKind` as defined in Task 1 are consumed unchanged in Task 4. `Candidate`/`CandidateKind` as defined in Task 4 are consumed unchanged in Tasks 5, 6 and 7. `resources_in`/`modules_of` signatures in Task 2 match their call sites in Task 6. `anchors_in`/`list_directory`/`DirectoryEntry` in Task 3 match their call sites in Tasks 4 and 7. `reference_target_path` in Task 4 is used only in Task 4.
 
 **Rough edges deliberately left in:** none. Task 6's `antora_include_candidates` binds `context` only to prove the file sits in an Antora module before offering Antora candidates; the discard is commented so it does not read as a mistake.

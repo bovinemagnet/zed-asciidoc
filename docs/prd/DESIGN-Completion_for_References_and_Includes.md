@@ -44,7 +44,7 @@ Three properties of the current code shape this design and must survive it.
 ```
 adoc-parser   completion_context(text, offset) -> Option<CompletionContext>
 adoc-antora   AntoraCatalog::resources_in, ::modules_of
-adoc-index    WorkspaceIndex::anchors_in, ::files_under, workspace::list_directory
+adoc-index    WorkspaceIndex::anchors_in, workspace::list_directory
 adoc-ls       handlers/completion.rs  (assembly)  →  protocol.rs  (lsp-types)
 ```
 
@@ -103,14 +103,12 @@ pub fn modules_of(&self, component: &str, version: Option<&str>) -> impl Iterato
 
 // adoc-index
 pub fn anchors_in(&self, path: &Path) -> impl Iterator<Item = (&str, &AnchorLocation)>
-pub fn files_under(&self, directory: &Path) -> impl Iterator<Item = &FileEntry>
 ```
 
 Each is a `BTreeMap` range followed by `take_while`. They are correct because the derived
 `Ord` on `AntoraCoordinate` orders fields *component → version → module → family →
-relative_path*, so every resource in one module-family is contiguous; `AnchorKey` orders
-*path → id*; and `PathBuf` compares component-wise, so every path beneath a directory is
-contiguous. No new index or auxiliary map is introduced.
+relative_path*, so every resource in one module-family is contiguous, and `AnchorKey`
+orders *path → id*. No new index or auxiliary map is introduced.
 
 ### 3.3 Candidate assembly (`adoc-ls/src/handlers/completion.rs`)
 
@@ -122,6 +120,11 @@ contiguous. No new index or auxiliary map is introduced.
 | `XrefAnchor { target }` | `target` resolved through the same order `definition.rs` uses, then `anchors_in` | same |
 | `LocalAnchor` | `anchors_in` on the current file | same |
 
+The index registers several ids per section — the title, Antora's `getting-started` form,
+Asciidoctor's `_getting_started` form, an alphanumeric form — so that resolution is forgiving
+about how a reference is written. Completion collapses them to one candidate per section,
+preferring the explicit anchor where one is declared and Antora's generated form where none is.
+
 Ordering is carried by `sortText`, not by list position: `0` prefixes the current module's
 bare IDs and `1` prefixes module-qualified IDs, so the current module ranks first while the
 client remains free to filter.
@@ -132,9 +135,10 @@ advertises `resolve_provider: false` and needs no `completionItem/resolve` round
 
 **The path completer** is the only component that touches the filesystem. It splits the
 typed prefix at the last `/`, resolves that directory against the current document, then
-merges `.adoc` files already held in the index with one shallow `read_dir` covering
-everything else — `query.sql`, `diagram.png`, and other non-AsciiDoc include targets that
-the index does not hold. Dotfiles and `DEFAULT_IGNORED_DIRECTORIES` are skipped. It lives
+lists it with one shallow `read_dir`. Reading the directory rather than the index is what
+makes `query.sql`, `diagram.png` and other non-AsciiDoc include targets completable at all,
+since the index holds only `.adoc` files. Dotfiles and `DEFAULT_IGNORED_DIRECTORIES` are
+skipped. It lives
 in `adoc-index::workspace`, which already owns `is_asciidoc_path`, the ignored-directory
 list and `collect_asciidoc_files`. Because it resolves relative to the typed prefix,
 `../shared/` works without special handling.
