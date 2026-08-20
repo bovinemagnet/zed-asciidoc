@@ -3,7 +3,7 @@ use std::path::Path;
 use adoc_antora::{AntoraCatalog, AntoraContext, ResourceFamily};
 
 use adoc_core::{canonical_id, Document, SourceRange};
-use adoc_index::WorkspaceIndex;
+use adoc_index::{list_directory, WorkspaceIndex};
 use adoc_parser::{completion_context, CompletionKind};
 
 use crate::handlers::definition::reference_target_path;
@@ -53,11 +53,15 @@ pub fn completion_at_offset(
             }
         }
         CompletionKind::XrefTarget => {
-            antora_page_candidates(index, antora, current_path, context.range).unwrap_or_default()
+            antora_page_candidates(index, antora, current_path, context.range).unwrap_or_else(
+                || path_candidates(index, current_path, &context.prefix, context.range),
+            )
         }
         CompletionKind::IncludeTarget => {
             antora_include_candidates(index, antora, current_path, &context.prefix, context.range)
-                .unwrap_or_default()
+                .unwrap_or_else(|| {
+                    path_candidates(index, current_path, &context.prefix, context.range)
+                })
         }
         CompletionKind::ImageTarget => antora_family_candidates(
             index,
@@ -67,7 +71,7 @@ pub fn completion_at_offset(
             "",
             context.range,
         )
-        .unwrap_or_default(),
+        .unwrap_or_else(|| path_candidates(index, current_path, &context.prefix, context.range)),
     };
 
     filter_by_prefix(candidates, &context.prefix)
@@ -292,6 +296,56 @@ fn title_of(index: &WorkspaceIndex, path: &Path) -> Option<String> {
         .title
         .as_ref()
         .map(|title| title.text.clone())
+}
+
+/// Relative-path candidates for a workspace with no Antora catalog.
+///
+/// The typed prefix is split at its last `/`: the left half names the directory to look
+/// in, and is kept on every label so that accepting a candidate leaves a valid path. That
+/// is also why `../shared/` needs no special handling.
+fn path_candidates(
+    index: &WorkspaceIndex,
+    current_path: &Path,
+    prefix: &str,
+    range: SourceRange,
+) -> Vec<Candidate> {
+    let (typed_directory, _) = prefix.rsplit_once('/').unwrap_or(("", prefix));
+    let label_prefix = if typed_directory.is_empty() {
+        String::new()
+    } else {
+        format!("{typed_directory}/")
+    };
+    let Some(base) = current_path.parent() else {
+        return Vec::new();
+    };
+    let directory = adoc_index::normalize_path(&base.join(typed_directory));
+
+    let mut candidates = Vec::new();
+    for entry in list_directory(&directory) {
+        let label = format!(
+            "{label_prefix}{}{}",
+            entry.name,
+            if entry.is_directory { "/" } else { "" }
+        );
+        let detail = if entry.is_directory {
+            None
+        } else {
+            title_of(index, &directory.join(&entry.name))
+        };
+        candidates.push(Candidate {
+            detail,
+            // Directories sort below files: the file is usually what is wanted.
+            sort_text: format!("{}{label}", u8::from(entry.is_directory)),
+            kind: if entry.is_directory {
+                CandidateKind::Directory
+            } else {
+                CandidateKind::Page
+            },
+            range,
+            label,
+        });
+    }
+    candidates
 }
 
 #[cfg(test)]
@@ -589,5 +643,72 @@ mod tests {
             .and_then(|candidate| candidate.detail);
 
         assert!(detail.is_some(), "a page candidate carries its title");
+    }
+
+    #[test]
+    fn completes_relative_paths_outside_antora() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/xrefs");
+        let mut index = WorkspaceIndex::new();
+        index
+            .index_roots(std::slice::from_ref(&root))
+            .expect("index fixture");
+        let path = root.join("index.adoc");
+        let text = "= Index\n\nSee xref:";
+        let document = parse("file:///index.adoc", text).document;
+
+        let labels: Vec<_> =
+            completion_at_offset(&index, &AntoraCatalog::new(), &path, &document, text.len())
+                .into_iter()
+                .map(|candidate| candidate.label)
+                .collect();
+
+        assert!(labels.contains(&"other.adoc".to_owned()), "{labels:?}");
+    }
+
+    #[test]
+    fn completes_non_asciidoc_include_targets_from_the_filesystem() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/antora-single-component");
+        let mut index = WorkspaceIndex::new();
+        index
+            .index_roots(std::slice::from_ref(&root))
+            .expect("index fixture");
+        // No catalog, so this exercises the plain-workspace path.
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\ninclude::../examples/";
+        let document = parse("file:///index.adoc", text).document;
+
+        let labels: Vec<_> =
+            completion_at_offset(&index, &AntoraCatalog::new(), &path, &document, text.len())
+                .into_iter()
+                .map(|candidate| candidate.label)
+                .collect();
+
+        assert!(
+            labels.contains(&"../examples/sample.json".to_owned()),
+            "a non-AsciiDoc include target must come from the directory read: {labels:?}"
+        );
+    }
+
+    #[test]
+    fn offers_directories_as_path_candidates() {
+        let root =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/antora-nested-pages");
+        let mut index = WorkspaceIndex::new();
+        index
+            .index_roots(std::slice::from_ref(&root))
+            .expect("index fixture");
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\nSee xref:";
+        let document = parse("file:///index.adoc", text).document;
+
+        let candidates =
+            completion_at_offset(&index, &AntoraCatalog::new(), &path, &document, text.len());
+        let directory = candidates
+            .iter()
+            .find(|candidate| candidate.label == "guides/")
+            .expect("a directory candidate");
+
+        assert_eq!(directory.kind, super::CandidateKind::Directory);
     }
 }
