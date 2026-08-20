@@ -318,7 +318,15 @@ fn path_candidates(
     let Some(base) = current_path.parent() else {
         return Vec::new();
     };
-    let directory = adoc_index::normalize_path(&base.join(typed_directory));
+    // `PathBuf::join` treats an argument starting with a separator as absolute and
+    // discards `base` entirely, unlike Node's `path.join`, which ignores a leading
+    // separator on a later segment; `adoc-antora/src/resource_id.rs` already has to make
+    // the same correction when parsing a resource id. Strip it so a prefix that merely
+    // looks absolute (`include::/etc/`) still resolves relative to the current document
+    // instead of escaping the workspace; the label above keeps what was typed, leading
+    // separator included, so the inserted text is unaffected.
+    let relative_directory = typed_directory.trim_start_matches('/');
+    let directory = adoc_index::normalize_path(&base.join(relative_directory));
 
     let mut candidates = Vec::new();
     for entry in list_directory(&directory) {
@@ -710,5 +718,60 @@ mod tests {
             .expect("a directory candidate");
 
         assert_eq!(directory.kind, super::CandidateKind::Directory);
+    }
+
+    #[test]
+    fn a_leading_separator_does_not_escape_the_document_directory() {
+        // `PathBuf::join` would treat this as an absolute path and discard the document's
+        // own directory entirely, listing this real fixture directory instead. Point it at
+        // one that certainly exists so the vulnerable behaviour would be observable, then
+        // assert it is not: the sibling file below must not appear in the candidates.
+        let escape_target = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/antora-single-component/modules/ROOT/examples");
+        assert!(
+            escape_target.join("sample.json").exists(),
+            "fixture must exist for this test to be meaningful"
+        );
+
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/xrefs");
+        let mut index = WorkspaceIndex::new();
+        index
+            .index_roots(std::slice::from_ref(&root))
+            .expect("index fixture");
+        let path = root.join("index.adoc");
+        let text = format!("= Index\n\ninclude::{}/", escape_target.display());
+        let document = parse("file:///index.adoc", &text).document;
+
+        let candidates =
+            completion_at_offset(&index, &AntoraCatalog::new(), &path, &document, text.len());
+
+        assert!(
+            candidates.is_empty(),
+            "a leading separator must resolve relative to the document, not escape it: \
+             {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn a_parent_relative_prefix_still_resolves_above_the_document_directory() {
+        // Unlike a leading `/`, a leading `../` is a legitimate way to reach above the
+        // document's own directory and must keep working after the fix above.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/antora-single-component");
+        let mut index = WorkspaceIndex::new();
+        index
+            .index_roots(std::slice::from_ref(&root))
+            .expect("index fixture");
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\ninclude::../examples/";
+        let document = parse("file:///index.adoc", text).document;
+
+        let labels: Vec<_> =
+            completion_at_offset(&index, &AntoraCatalog::new(), &path, &document, text.len())
+                .into_iter()
+                .map(|candidate| candidate.label)
+                .collect();
+
+        assert_eq!(labels, vec!["../examples/sample.json".to_owned()]);
     }
 }
