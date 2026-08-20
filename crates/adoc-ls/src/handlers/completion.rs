@@ -1,8 +1,8 @@
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use adoc_antora::{AntoraCatalog, AntoraContext, ResourceFamily};
 
-use adoc_core::{canonical_id, Document, SourceRange};
+use adoc_core::{asciidoctor_id, canonical_id, Document, SourceRange};
 use adoc_index::{list_directory, WorkspaceIndex};
 use adoc_parser::{completion_context, CompletionKind};
 
@@ -45,33 +45,45 @@ pub fn completion_at_offset(
     };
 
     let candidates = match &context.kind {
-        CompletionKind::LocalAnchor => anchor_candidates(index, current_path, context.range),
+        CompletionKind::LocalAnchor => {
+            anchor_candidates(index, antora, current_path, context.range)
+        }
         CompletionKind::XrefAnchor { target } => {
             match reference_target_path(index, antora, current_path, target) {
-                Some(path) => anchor_candidates(index, &path, context.range),
+                Some(path) => anchor_candidates(index, antora, &path, context.range),
                 None => Vec::new(),
             }
         }
-        CompletionKind::XrefTarget => {
-            antora_page_candidates(index, antora, current_path, context.range).unwrap_or_else(
-                || path_candidates(index, current_path, &context.prefix, context.range),
+        CompletionKind::XrefTarget => match antora.context_for_path(current_path) {
+            Some(antora_context) => {
+                antora_page_candidates(index, antora, &antora_context, context.range)
+            }
+            None => path_candidates(index, current_path, &context.prefix, context.range),
+        },
+        CompletionKind::IncludeTarget => match antora.context_for_path(current_path) {
+            Some(antora_context) => antora_include_candidates(
+                index,
+                antora,
+                &antora_context,
+                &context.prefix,
+                context.range,
             )
-        }
-        CompletionKind::IncludeTarget => {
-            antora_include_candidates(index, antora, current_path, &context.prefix, context.range)
-                .unwrap_or_else(|| {
-                    path_candidates(index, current_path, &context.prefix, context.range)
-                })
-        }
-        CompletionKind::ImageTarget => antora_family_candidates(
-            index,
-            antora,
-            current_path,
-            ResourceFamily::Image,
-            "",
-            context.range,
-        )
-        .unwrap_or_else(|| path_candidates(index, current_path, &context.prefix, context.range)),
+            .unwrap_or_else(|| {
+                path_candidates(index, current_path, &context.prefix, context.range)
+            }),
+            None => path_candidates(index, current_path, &context.prefix, context.range),
+        },
+        CompletionKind::ImageTarget => match antora.context_for_path(current_path) {
+            Some(antora_context) => antora_family_candidates(
+                index,
+                antora,
+                &antora_context,
+                ResourceFamily::Image,
+                "",
+                context.range,
+            ),
+            None => path_candidates(index, current_path, &context.prefix, context.range),
+        },
     };
 
     filter_by_prefix(candidates, &context.prefix)
@@ -79,9 +91,9 @@ pub fn completion_at_offset(
 
 /// One candidate per section, plus one per anchor that is not attached to a heading.
 ///
-/// `WorkspaceIndex::anchors_in` deliberately registers several id forms per section — the
-/// title, Antora's generated form, Asciidoctor's `_`-prefixed form — so that *resolution* is
-/// forgiving about how a reference is written. That makes it the wrong input for
+/// `Section::implicit_ids` deliberately registers several id forms per section in the index —
+/// the title, Antora's generated form, Asciidoctor's `_`-prefixed form — so that *resolution*
+/// is forgiving about how a reference is written. That makes it the wrong input for
 /// *enumeration*: collapsing those forms back down, whether by the location they point at or
 /// by a punctuation-insensitive spelling, either merges two distinct sections that happen to
 /// normalise the same way (`Set-up` and `Setup`), or, when a section declares an explicit
@@ -90,13 +102,27 @@ pub fn completion_at_offset(
 ///
 /// Candidates are built from the document itself instead, which already carries exactly one
 /// row per section in the author's own spelling: `Section::id` where the author wrote an
-/// explicit anchor, and Antora's generated id (`canonical_id`) where they did not — never a
-/// suppressed one. Anchors that are not attached to any heading (a `[[bibliography-entry]]` in
-/// body text) are offered too, but only once: an anchor immediately above a heading is *also*
-/// that section's `id`, so it is skipped here to avoid duplicating the section's own candidate.
-fn anchor_candidates(index: &WorkspaceIndex, path: &Path, range: SourceRange) -> Vec<Candidate> {
+/// explicit anchor, and a generated id where they did not — never a suppressed one. The
+/// generated form depends on where `path` sits: Antora's `canonical_id` inside a module, since
+/// that is what an Antora-rendered site resolves, and plain Asciidoctor's `asciidoctor_id`
+/// everywhere else, since that is what `asciidoctor` itself would generate. Anchors that are
+/// not attached to any heading (a `[[bibliography-entry]]` in body text) are offered too, but
+/// only once: an anchor immediately above a heading is *also* that section's `id`, so it is
+/// skipped here to avoid duplicating the section's own candidate.
+fn anchor_candidates(
+    index: &WorkspaceIndex,
+    antora: &AntoraCatalog,
+    path: &Path,
+    range: SourceRange,
+) -> Vec<Candidate> {
     let Some(document) = index.file(path).map(|entry| &entry.document) else {
         return Vec::new();
+    };
+
+    let generate_id: fn(&str) -> String = if antora.context_for_path(path).is_some() {
+        canonical_id
+    } else {
+        asciidoctor_id
     };
 
     let mut candidates: Vec<Candidate> = document
@@ -106,21 +132,22 @@ fn anchor_candidates(index: &WorkspaceIndex, path: &Path, range: SourceRange) ->
             section
                 .id
                 .clone()
-                .unwrap_or_else(|| canonical_id(&section.title))
+                .unwrap_or_else(|| generate_id(&section.title))
         })
         .map(|label| candidate(label, range))
+        .collect();
+
+    let section_ids: HashSet<&str> = document
+        .sections
+        .iter()
+        .filter_map(|section| section.id.as_deref())
         .collect();
 
     candidates.extend(
         document
             .anchors
             .iter()
-            .filter(|anchor| {
-                !document
-                    .sections
-                    .iter()
-                    .any(|section| section.id.as_deref() == Some(anchor.id.as_str()))
-            })
+            .filter(|anchor| !section_ids.contains(anchor.id.as_str()))
             .map(|anchor| candidate(anchor.id.clone(), range)),
     );
 
@@ -157,10 +184,9 @@ fn filter_by_prefix(candidates: Vec<Candidate>, prefix: &str) -> Vec<Candidate> 
 fn antora_page_candidates(
     index: &WorkspaceIndex,
     antora: &AntoraCatalog,
-    current_path: &Path,
+    context: &AntoraContext,
     range: SourceRange,
-) -> Option<Vec<Candidate>> {
-    let context = antora.context_for_path(current_path)?;
+) -> Vec<Candidate> {
     let mut candidates = Vec::new();
 
     // The current module's pages are written bare, the way Antora authors write them.
@@ -210,21 +236,21 @@ fn antora_page_candidates(
         }
     }
 
-    Some(candidates)
+    candidates
 }
 
+/// Candidates for `include::`, given a context already resolved by the caller.
+///
+/// Returns `None` only when the typed family name (before `$`) does not parse as a known
+/// `ResourceFamily`, so the caller falls back to the plain path completer for a target such
+/// as `include::bogus$`.
 fn antora_include_candidates(
     index: &WorkspaceIndex,
     antora: &AntoraCatalog,
-    current_path: &Path,
+    context: &AntoraContext,
     prefix: &str,
     range: SourceRange,
 ) -> Option<Vec<Candidate>> {
-    let context = antora.context_for_path(current_path)?;
-
-    // Confirms the file sits in a module; without that there is nothing Antora to offer.
-    let _ = context;
-
     let Some((family_name, _)) = prefix.split_once('$') else {
         // No family chosen yet: offer the families themselves.
         return Some(
@@ -245,48 +271,46 @@ fn antora_include_candidates(
     };
 
     let family = family_name.parse::<ResourceFamily>().ok()?;
-    antora_family_candidates(
+    Some(antora_family_candidates(
         index,
         antora,
-        current_path,
+        context,
         family,
         &format!("{family}$"),
         range,
-    )
+    ))
 }
 
+/// Candidates for one Antora family, given a context already resolved by the caller.
 fn antora_family_candidates(
     index: &WorkspaceIndex,
     antora: &AntoraCatalog,
-    current_path: &Path,
+    context: &AntoraContext,
     family: ResourceFamily,
     label_prefix: &str,
     range: SourceRange,
-) -> Option<Vec<Candidate>> {
-    let context: AntoraContext = antora.context_for_path(current_path)?;
-    Some(
-        antora
-            .resources_in(
-                &context.component,
-                context.version.as_deref(),
-                &context.module,
-                family,
-            )
-            .map(|resource| {
-                let label = format!(
-                    "{label_prefix}{}",
-                    resource.coordinate.relative_path.to_string_lossy()
-                );
-                Candidate {
-                    detail: title_of(index, &resource.source_path),
-                    sort_text: format!("0{label}"),
-                    kind: CandidateKind::Resource,
-                    range,
-                    label,
-                }
-            })
-            .collect(),
-    )
+) -> Vec<Candidate> {
+    antora
+        .resources_in(
+            &context.component,
+            context.version.as_deref(),
+            &context.module,
+            family,
+        )
+        .map(|resource| {
+            let label = format!(
+                "{label_prefix}{}",
+                resource.coordinate.relative_path.to_string_lossy()
+            );
+            Candidate {
+                detail: title_of(index, &resource.source_path),
+                sort_text: format!("0{label}"),
+                kind: CandidateKind::Resource,
+                range,
+                label,
+            }
+        })
+        .collect()
 }
 
 fn title_of(index: &WorkspaceIndex, path: &Path) -> Option<String> {
@@ -404,7 +428,10 @@ mod tests {
     }
 
     #[test]
-    fn prefers_the_generated_id_for_a_section_with_no_explicit_anchor() {
+    fn prefers_asciidoctor_s_generated_id_outside_antora() {
+        // Plain Asciidoctor's defaults are `idprefix=_` and `idseparator=_`, unlike
+        // Antora's `idprefix: ''`/`idseparator: '-'`, so a workspace with no Antora
+        // catalogue must offer the `_`-prefixed form real Asciidoctor would resolve.
         let path = Path::new("/docs/guide.adoc");
         let text = "== Getting Started\n\nSee <<";
         let mut index = WorkspaceIndex::new();
@@ -417,7 +444,7 @@ mod tests {
                 .map(|candidate| candidate.label)
                 .collect();
 
-        assert_eq!(labels, vec!["getting-started".to_owned()]);
+        assert_eq!(labels, vec!["_getting_started".to_owned()]);
     }
 
     #[test]
@@ -451,7 +478,7 @@ mod tests {
                 .map(|candidate| candidate.label)
                 .collect();
 
-        assert_eq!(labels, vec!["set-up".to_owned(), "setup".to_owned()]);
+        assert_eq!(labels, vec!["_set_up".to_owned(), "_setup".to_owned()]);
     }
 
     #[test]
@@ -539,6 +566,40 @@ mod tests {
             .expect("discover fixture")
             .catalog;
         (index, catalog, root)
+    }
+
+    #[test]
+    fn prefers_antora_s_generated_id_for_a_section_with_no_explicit_anchor() {
+        // Inside an Antora module the generated id must match Antora's own convention
+        // (`idprefix: ''`, `idseparator: '-'`), not plain Asciidoctor's `_`-prefixed form.
+        let (mut index, catalog, root) = antora_fixture();
+        let path = root.join("modules/ROOT/pages/getting-started.adoc");
+        let text = "== Getting Started\n\nSee <<";
+        index.index_source(&path, text);
+        let document = parse("file:///getting-started.adoc", text).document;
+
+        let labels: Vec<_> = completion_at_offset(&index, &catalog, &path, &document, text.len())
+            .into_iter()
+            .map(|candidate| candidate.label)
+            .collect();
+
+        assert_eq!(labels, vec!["getting-started".to_owned()]);
+    }
+
+    #[test]
+    fn an_explicit_anchor_suppresses_the_generated_id_inside_an_antora_module() {
+        let (mut index, catalog, root) = antora_fixture();
+        let path = root.join("modules/ROOT/pages/getting-started.adoc");
+        let text = "[[install-linux]]\n== Installing on Linux\n\nSee <<";
+        index.index_source(&path, text);
+        let document = parse("file:///getting-started.adoc", text).document;
+
+        let labels: Vec<_> = completion_at_offset(&index, &catalog, &path, &document, text.len())
+            .into_iter()
+            .map(|candidate| candidate.label)
+            .collect();
+
+        assert_eq!(labels, vec!["install-linux".to_owned()]);
     }
 
     #[test]
@@ -650,7 +711,7 @@ mod tests {
             .find(|candidate| candidate.label == "security:authentication.adoc")
             .and_then(|candidate| candidate.detail);
 
-        assert!(detail.is_some(), "a page candidate carries its title");
+        assert_eq!(detail, Some("Authentication".to_owned()));
     }
 
     #[test]

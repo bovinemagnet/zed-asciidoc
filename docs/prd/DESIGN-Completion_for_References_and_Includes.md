@@ -44,7 +44,7 @@ Three properties of the current code shape this design and must survive it.
 ```
 adoc-parser   completion_context(text, offset) -> Option<CompletionContext>
 adoc-antora   AntoraCatalog::resources_in, ::modules_of
-adoc-index    WorkspaceIndex::anchors_in, workspace::list_directory
+adoc-index    WorkspaceIndex::file (reaches document.sections/document.anchors), workspace::list_directory
 adoc-ls       handlers/completion.rs  (assembly)  →  protocol.rs  (lsp-types)
 ```
 
@@ -100,15 +100,19 @@ replacing the tail.
 pub fn resources_in(&self, component: &str, version: Option<&str>,
                     module: &str, family: ResourceFamily) -> impl Iterator<Item = &AntoraResource>
 pub fn modules_of(&self, component: &str, version: Option<&str>) -> impl Iterator<Item = &Module>
-
-// adoc-index
-pub fn anchors_in(&self, path: &Path) -> impl Iterator<Item = (&str, &AnchorLocation)>
 ```
 
 Each is a `BTreeMap` range followed by `take_while`. They are correct because the derived
 `Ord` on `AntoraCoordinate` orders fields *component → version → module → family →
-relative_path*, so every resource in one module-family is contiguous, and `AnchorKey`
-orders *path → id*. No new index or auxiliary map is introduced.
+relative_path*, so every resource in one module-family is contiguous. No new index or
+auxiliary map is introduced.
+
+Anchor candidates need no equivalent enumerator. `WorkspaceIndex` registers several id forms
+per section (`Section::implicit_ids`) so that *resolution* is forgiving about how a reference
+is spelled, which makes that map the wrong input for *enumeration* — see §3.3. Instead,
+candidate assembly reads `document.sections` and `document.anchors` straight off the
+already-parsed `Document` reached through `WorkspaceIndex::file`, which carries exactly one
+row per section and per standalone anchor.
 
 ### 3.3 Candidate assembly (`adoc-ls/src/handlers/completion.rs`)
 
@@ -117,13 +121,17 @@ orders *path → id*. No new index or auxiliary map is introduced.
 | `XrefTarget` | current module's pages as bare IDs, sorted first; then every other module's pages as `module:page.adoc` | path completer |
 | `IncludeTarget` | the family prefixes (`partial$`, `example$`, `image$`, `attachment$`, `page$`) until `$` is typed; that family's resources afterwards | path completer |
 | `ImageTarget` | `image$` resources | path completer |
-| `XrefAnchor { target }` | `target` resolved through the same order `definition.rs` uses, then `anchors_in` | same |
-| `LocalAnchor` | `anchors_in` on the current file | same |
+| `XrefAnchor { target }` | `target` resolved through the same order `definition.rs` uses, then that document's `sections`/`anchors` | same |
+| `LocalAnchor` | the current document's `sections`/`anchors` | same |
 
-The index registers several ids per section — the title, Antora's `getting-started` form,
-Asciidoctor's `_getting_started` form, an alphanumeric form — so that resolution is forgiving
-about how a reference is written. Completion collapses them to one candidate per section,
-preferring the explicit anchor where one is declared and Antora's generated form where none is.
+`WorkspaceIndex` registers several ids per section — the title, Antora's `getting-started`
+form, Asciidoctor's `_getting_started` form, an alphanumeric form — so that *resolution* is
+forgiving about how a reference is written. Completion collapses them to one candidate per
+section instead, preferring the explicit anchor where one is declared. Where none is, the
+generated form depends on context: Antora's `canonical_id` (`getting-started`) inside a
+module, since that is what an Antora-rendered site resolves, and plain Asciidoctor's
+`asciidoctor_id` (`_getting_started`) outside one, since that is what `asciidoctor` itself
+generates by default.
 
 Ordering is carried by `sortText`, not by list position: `0` prefixes the current module's
 bare IDs and `1` prefixes module-qualified IDs, so the current module ranks first while the
@@ -221,12 +229,15 @@ and family prefixes. No new fixture is required.
   trustworthy: a comment block yields `None`; a `[source]` block yields `IncludeTarget`
   only; `\xref:` stays escaped; `myxref:` does not trigger; a cursor after `[` yields
   `None`; and `xref:page.adoc#` yields `XrefAnchor`.
-- **`adoc-antora` and `adoc-index`** — each enumerator returns exactly its own range and
-  nothing adjacent; `resources_in(ROOT, Partial)` must not leak `security`'s partials.
+- **`adoc-antora`** — each enumerator returns exactly its own range and nothing adjacent;
+  `resources_in(ROOT, Partial)` must not leak `security`'s partials.
 - **`adoc-ls`** — `completion_at_offset` over the fixture: bare IDs ranked before
-  module-qualified ones, family prefixes on `include::`, anchors after `#`.
+  module-qualified ones, family prefixes on `include::`, anchors after `#`, and the generated
+  anchor form chosen by context (Antora's inside a module, Asciidoctor's outside one).
 - **`crates/adoc-ls/tests/stdio.rs`** — a real `textDocument/completion` round-trip through
-  the built binary, asserting both that the capability is advertised and that items return.
+  the built binary, asserting that requesting completion returns items. Capability
+  advertisement (the trigger characters, `resolve_provider: false`) is covered separately by
+  `capabilities::tests::advertises_completion_with_its_trigger_characters`.
 - **Corpus probe** — a throwaway harness written in the scratchpad, driving the built
   server over stdio against the reference Antora corpus, recording candidate counts and
   response latency per context. It is sanity-checked against a position with no context so
