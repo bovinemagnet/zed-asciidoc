@@ -168,25 +168,6 @@ impl WorkspaceIndex {
             })
             .and_then(|locations| locations.first())
     }
-
-    /// Every anchor id declared in one file, in id order, with its first location.
-    ///
-    /// A range over the ordered map, not a scan: `AnchorKey` orders path then id.
-    pub fn anchors_in(&self, path: &Path) -> impl Iterator<Item = (&str, &AnchorLocation)> {
-        let path = normalize_path(path);
-        let start = AnchorKey {
-            path: path.clone(),
-            id: String::new(),
-        };
-        self.anchors
-            .range(start..)
-            .take_while(move |(key, _)| key.path == path)
-            .filter_map(|(key, locations)| {
-                locations
-                    .first()
-                    .map(|location| (key.id.as_str(), location))
-            })
-    }
 }
 
 fn path_to_uri(path: &Path) -> String {
@@ -231,28 +212,5 @@ mod tests {
 
         assert_eq!(count, 1);
         assert_eq!(index.files().count(), 1);
-    }
-
-    #[test]
-    fn enumerates_the_anchors_of_one_file_only() {
-        let mut index = WorkspaceIndex::new();
-        index.index_source(
-            PathBuf::from("docs/guide.adoc"),
-            "[[intro]]\n== Intro\n\n[[detail]]\n== Detail\n",
-        );
-        index.index_source(PathBuf::from("docs/other.adoc"), "[[elsewhere]]\n== Away\n");
-
-        let mut ids: Vec<_> = index
-            .anchors_in(Path::new("docs/guide.adoc"))
-            .map(|(id, _)| id.to_owned())
-            .collect();
-        ids.sort();
-
-        assert!(ids.contains(&"intro".to_owned()));
-        assert!(ids.contains(&"detail".to_owned()));
-        assert!(
-            !ids.contains(&"elsewhere".to_owned()),
-            "another file's anchors must not leak in"
-        );
     }
 }

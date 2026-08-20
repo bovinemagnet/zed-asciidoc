@@ -1,9 +1,8 @@
 use std::path::Path;
 
 use adoc_antora::AntoraCatalog;
-use std::collections::BTreeMap;
 
-use adoc_core::{alphanumeric_id, Document, SourceRange};
+use adoc_core::{canonical_id, Document, SourceRange};
 use adoc_index::WorkspaceIndex;
 use adoc_parser::{completion_context, CompletionKind};
 
@@ -62,47 +61,66 @@ pub fn completion_at_offset(
     filter_by_prefix(candidates, &context.prefix)
 }
 
-/// One candidate per section, not one per id form.
+/// One candidate per section, plus one per anchor that is not attached to a heading.
 ///
-/// The index registers every form `Section::implicit_ids` produces — the title, Antora's
-/// `getting-started` form, Asciidoctor's `_getting_started` form — plus the explicit anchor
-/// where a section declares one, so that resolution is forgiving about how a reference is
-/// written. An explicit anchor sits on its own line above the heading, so it points at a
-/// different `SourceRange` than the heading itself even though it names the same section;
-/// grouping by location would therefore leave the explicit form and the generated forms as
-/// separate candidates. `alphanumeric_id` is the same punctuation-insensitive comparison
-/// `WorkspaceIndex::resolve_anchor` already falls back to, so grouping by it collapses every
-/// form of one section together regardless of which line it was declared on. One id per group
-/// is then chosen: no leading `_`, then the lowercase form, then lexicographic order. That
-/// yields the explicit anchor where one is declared, and Antora's generated id where none is.
+/// `WorkspaceIndex::anchors_in` deliberately registers several id forms per section — the
+/// title, Antora's generated form, Asciidoctor's `_`-prefixed form — so that *resolution* is
+/// forgiving about how a reference is written. That makes it the wrong input for
+/// *enumeration*: collapsing those forms back down, whether by the location they point at or
+/// by a punctuation-insensitive spelling, either merges two distinct sections that happen to
+/// normalise the same way (`Set-up` and `Setup`), or, when a section declares an explicit
+/// anchor, still offers Asciidoctor's generated id alongside it — an id the explicit anchor
+/// actually suppresses, so completion would offer a link that does not resolve.
+///
+/// Candidates are built from the document itself instead, which already carries exactly one
+/// row per section in the author's own spelling: `Section::id` where the author wrote an
+/// explicit anchor, and Antora's generated id (`canonical_id`) where they did not — never a
+/// suppressed one. Anchors that are not attached to any heading (a `[[bibliography-entry]]` in
+/// body text) are offered too, but only once: an anchor immediately above a heading is *also*
+/// that section's `id`, so it is skipped here to avoid duplicating the section's own candidate.
 fn anchor_candidates(index: &WorkspaceIndex, path: &Path, range: SourceRange) -> Vec<Candidate> {
-    let mut by_section: BTreeMap<String, &str> = BTreeMap::new();
-    for (id, _location) in index.anchors_in(path) {
-        by_section
-            .entry(alphanumeric_id(id))
-            .and_modify(|chosen| {
-                if preference(id) < preference(chosen) {
-                    *chosen = id;
-                }
-            })
-            .or_insert(id);
-    }
+    let Some(document) = index.file(path).map(|entry| &entry.document) else {
+        return Vec::new();
+    };
 
-    by_section
-        .into_values()
-        .map(|id| Candidate {
-            label: id.to_owned(),
-            detail: None,
-            sort_text: format!("0{id}"),
-            kind: CandidateKind::Anchor,
-            range,
+    let mut candidates: Vec<Candidate> = document
+        .sections
+        .iter()
+        .map(|section| {
+            section
+                .id
+                .clone()
+                .unwrap_or_else(|| canonical_id(&section.title))
         })
-        .collect()
+        .map(|label| candidate(label, range))
+        .collect();
+
+    candidates.extend(
+        document
+            .anchors
+            .iter()
+            .filter(|anchor| {
+                !document
+                    .sections
+                    .iter()
+                    .any(|section| section.id.as_deref() == Some(anchor.id.as_str()))
+            })
+            .map(|anchor| candidate(anchor.id.clone(), range)),
+    );
+
+    candidates.sort_by(|a, b| a.label.cmp(&b.label));
+    candidates
 }
 
-/// Lower sorts better. Underscore-prefixed forms last, mixed case next, then shortest.
-fn preference(id: &str) -> (bool, bool, &str) {
-    (id.starts_with('_'), id.chars().any(char::is_uppercase), id)
+fn candidate(label: String, range: SourceRange) -> Candidate {
+    let sort_text = format!("0{label}");
+    Candidate {
+        label,
+        detail: None,
+        sort_text,
+        kind: CandidateKind::Anchor,
+        range,
+    }
 }
 
 /// Narrow the list to what the author has typed, case-insensitively and by substring.
@@ -199,6 +217,57 @@ mod tests {
                 .collect();
 
         assert_eq!(labels, vec!["detail".to_owned()]);
+    }
+
+    #[test]
+    fn offers_distinct_candidates_for_sections_that_normalise_to_the_same_alphanumeric_form() {
+        let path = Path::new("/docs/guide.adoc");
+        let text = "== Set-up\n\n== Setup\n\nSee <<";
+        let mut index = WorkspaceIndex::new();
+        index.index_source(path, text);
+        let document = parse("file:///docs/guide.adoc", text).document;
+
+        let labels: Vec<_> =
+            completion_at_offset(&index, &AntoraCatalog::new(), path, &document, text.len())
+                .into_iter()
+                .map(|candidate| candidate.label)
+                .collect();
+
+        assert_eq!(labels, vec!["set-up".to_owned(), "setup".to_owned()]);
+    }
+
+    #[test]
+    fn an_explicit_anchor_suppresses_the_generated_id() {
+        let path = Path::new("/docs/guide.adoc");
+        let text = "[[install-linux]]\n== Installing on Linux\n\nSee <<";
+        let mut index = WorkspaceIndex::new();
+        index.index_source(path, text);
+        let document = parse("file:///docs/guide.adoc", text).document;
+
+        let labels: Vec<_> =
+            completion_at_offset(&index, &AntoraCatalog::new(), path, &document, text.len())
+                .into_iter()
+                .map(|candidate| candidate.label)
+                .collect();
+
+        assert_eq!(labels, vec!["install-linux".to_owned()]);
+    }
+
+    #[test]
+    fn offers_a_standalone_anchor_not_attached_to_any_heading() {
+        let path = Path::new("/docs/guide.adoc");
+        let text = "[[bibliography-entry]]\nSome reference text.\n\nSee <<";
+        let mut index = WorkspaceIndex::new();
+        index.index_source(path, text);
+        let document = parse("file:///docs/guide.adoc", text).document;
+
+        let labels: Vec<_> =
+            completion_at_offset(&index, &AntoraCatalog::new(), path, &document, text.len())
+                .into_iter()
+                .map(|candidate| candidate.label)
+                .collect();
+
+        assert!(labels.contains(&"bibliography-entry".to_owned()));
     }
 
     #[test]
