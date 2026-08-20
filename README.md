@@ -25,6 +25,11 @@ Implemented:
 - Antora descriptor parsing plus deterministic component, module, and resource-family discovery.
 - Same-component Antora xref/include navigation and unknown module/resource diagnostics; components
   absent from the workspace are assumed to come from elsewhere in the playbook and are not reported.
+- Completion for `xref:` targets, `include::` targets, `image:` targets, and anchors.
+  Inside an Antora module the current module's pages are offered as bare IDs and other
+  modules' pages module-qualified, `include::` offers the family prefixes and then that
+  family's resources, and anchors come from the file a target names. In a plain workspace
+  the same constructs complete relative paths, including non-AsciiDoc include targets.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via two code actions. `AsciiDoc: render preview` renders once;
   `AsciiDoc: render live preview` additionally re-renders whenever the document is saved
@@ -44,7 +49,7 @@ Implemented:
 Not implemented yet:
 
 - Cross-component/version Antora selection and `antora.yml` editor diagnostics.
-- Completion, rename, and references. The only code action is the preview command above.
+- Rename and references. The only code action is the preview command above.
 - A preview pane inside Zed. The extension API exposes no webview or preview capability,
   so preview opens externally; see
   `docs/prd/DESIGN-Preview_Pipeline_and_Native_Rendering.md`.
