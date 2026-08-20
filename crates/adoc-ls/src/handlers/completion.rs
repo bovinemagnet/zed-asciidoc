@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use adoc_antora::AntoraCatalog;
+use adoc_antora::{AntoraCatalog, AntoraContext, ResourceFamily};
 
 use adoc_core::{canonical_id, Document, SourceRange};
 use adoc_index::WorkspaceIndex;
@@ -52,10 +52,22 @@ pub fn completion_at_offset(
                 None => Vec::new(),
             }
         }
-        // Filled in by later tasks.
-        CompletionKind::XrefTarget
-        | CompletionKind::IncludeTarget
-        | CompletionKind::ImageTarget => Vec::new(),
+        CompletionKind::XrefTarget => {
+            antora_page_candidates(index, antora, current_path, context.range).unwrap_or_default()
+        }
+        CompletionKind::IncludeTarget => {
+            antora_include_candidates(index, antora, current_path, &context.prefix, context.range)
+                .unwrap_or_default()
+        }
+        CompletionKind::ImageTarget => antora_family_candidates(
+            index,
+            antora,
+            current_path,
+            ResourceFamily::Image,
+            "",
+            context.range,
+        )
+        .unwrap_or_default(),
     };
 
     filter_by_prefix(candidates, &context.prefix)
@@ -136,6 +148,150 @@ fn filter_by_prefix(candidates: Vec<Candidate>, prefix: &str) -> Vec<Candidate> 
         .into_iter()
         .filter(|candidate| candidate.label.to_lowercase().contains(&needle))
         .collect()
+}
+
+fn antora_page_candidates(
+    index: &WorkspaceIndex,
+    antora: &AntoraCatalog,
+    current_path: &Path,
+    range: SourceRange,
+) -> Option<Vec<Candidate>> {
+    let context = antora.context_for_path(current_path)?;
+    let mut candidates = Vec::new();
+
+    // The current module's pages are written bare, the way Antora authors write them.
+    for resource in antora.resources_in(
+        &context.component,
+        context.version.as_deref(),
+        &context.module,
+        ResourceFamily::Page,
+    ) {
+        let label = resource
+            .coordinate
+            .relative_path
+            .to_string_lossy()
+            .into_owned();
+        candidates.push(Candidate {
+            detail: title_of(index, &resource.source_path),
+            sort_text: format!("0{label}"),
+            kind: CandidateKind::Page,
+            range,
+            label,
+        });
+    }
+
+    // Every other module of the same component, module-qualified and ranked below.
+    for module in antora.modules_of(&context.component, context.version.as_deref()) {
+        if module.name == context.module {
+            continue;
+        }
+        for resource in antora.resources_in(
+            &context.component,
+            context.version.as_deref(),
+            &module.name,
+            ResourceFamily::Page,
+        ) {
+            let label = format!(
+                "{}:{}",
+                module.name,
+                resource.coordinate.relative_path.to_string_lossy()
+            );
+            candidates.push(Candidate {
+                detail: title_of(index, &resource.source_path),
+                sort_text: format!("1{label}"),
+                kind: CandidateKind::Page,
+                range,
+                label,
+            });
+        }
+    }
+
+    Some(candidates)
+}
+
+fn antora_include_candidates(
+    index: &WorkspaceIndex,
+    antora: &AntoraCatalog,
+    current_path: &Path,
+    prefix: &str,
+    range: SourceRange,
+) -> Option<Vec<Candidate>> {
+    let context = antora.context_for_path(current_path)?;
+
+    // Confirms the file sits in a module; without that there is nothing Antora to offer.
+    let _ = context;
+
+    let Some((family_name, _)) = prefix.split_once('$') else {
+        // No family chosen yet: offer the families themselves.
+        return Some(
+            ResourceFamily::ALL
+                .iter()
+                .map(|family| {
+                    let label = format!("{family}$");
+                    Candidate {
+                        detail: None,
+                        sort_text: format!("0{label}"),
+                        kind: CandidateKind::Family,
+                        range,
+                        label,
+                    }
+                })
+                .collect(),
+        );
+    };
+
+    let family = family_name.parse::<ResourceFamily>().ok()?;
+    antora_family_candidates(
+        index,
+        antora,
+        current_path,
+        family,
+        &format!("{family}$"),
+        range,
+    )
+}
+
+fn antora_family_candidates(
+    index: &WorkspaceIndex,
+    antora: &AntoraCatalog,
+    current_path: &Path,
+    family: ResourceFamily,
+    label_prefix: &str,
+    range: SourceRange,
+) -> Option<Vec<Candidate>> {
+    let context: AntoraContext = antora.context_for_path(current_path)?;
+    Some(
+        antora
+            .resources_in(
+                &context.component,
+                context.version.as_deref(),
+                &context.module,
+                family,
+            )
+            .map(|resource| {
+                let label = format!(
+                    "{label_prefix}{}",
+                    resource.coordinate.relative_path.to_string_lossy()
+                );
+                Candidate {
+                    detail: title_of(index, &resource.source_path),
+                    sort_text: format!("0{label}"),
+                    kind: CandidateKind::Resource,
+                    range,
+                    label,
+                }
+            })
+            .collect(),
+    )
+}
+
+fn title_of(index: &WorkspaceIndex, path: &Path) -> Option<String> {
+    index
+        .file(path)?
+        .document
+        .title
+        .as_ref()
+        .map(|title| title.text.clone())
 }
 
 #[cfg(test)]
@@ -306,5 +462,132 @@ mod tests {
             completion_at_offset(&index, &AntoraCatalog::new(), path, &document, text.len())
                 .is_empty()
         );
+    }
+
+    use adoc_antora::discover_antora_workspace;
+
+    fn antora_fixture() -> (WorkspaceIndex, AntoraCatalog, std::path::PathBuf) {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/antora-single-component");
+        let mut index = WorkspaceIndex::new();
+        index
+            .index_roots(std::slice::from_ref(&root))
+            .expect("index fixture");
+        let catalog = discover_antora_workspace(std::slice::from_ref(&root))
+            .expect("discover fixture")
+            .catalog;
+        (index, catalog, root)
+    }
+
+    #[test]
+    fn ranks_the_current_module_above_other_modules() {
+        let (index, catalog, root) = antora_fixture();
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\nSee xref:";
+        let document = parse("file:///index.adoc", text).document;
+
+        let candidates = completion_at_offset(&index, &catalog, &path, &document, text.len());
+        let labels: Vec<_> = candidates
+            .iter()
+            .map(|candidate| candidate.label.clone())
+            .collect();
+
+        assert!(
+            labels.contains(&"index.adoc".to_owned()),
+            "the current module's pages are offered as bare ids: {labels:?}"
+        );
+        assert!(
+            labels.contains(&"security:authentication.adoc".to_owned()),
+            "other modules are offered module-qualified: {labels:?}"
+        );
+        let bare = candidates
+            .iter()
+            .find(|candidate| candidate.label == "index.adoc")
+            .expect("bare id");
+        let qualified = candidates
+            .iter()
+            .find(|candidate| candidate.label == "security:authentication.adoc")
+            .expect("qualified id");
+        assert!(
+            bare.sort_text < qualified.sort_text,
+            "the current module must sort first: {} vs {}",
+            bare.sort_text,
+            qualified.sort_text
+        );
+    }
+
+    #[test]
+    fn offers_the_family_prefixes_before_a_dollar_is_typed() {
+        let (index, catalog, root) = antora_fixture();
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\ninclude::";
+        let document = parse("file:///index.adoc", text).document;
+
+        let labels: Vec<_> = completion_at_offset(&index, &catalog, &path, &document, text.len())
+            .into_iter()
+            .map(|candidate| candidate.label)
+            .collect();
+
+        for family in ["page$", "partial$", "example$", "image$", "attachment$"] {
+            assert!(
+                labels.contains(&family.to_owned()),
+                "`{family}` must be offered: {labels:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn offers_a_family_s_resources_once_the_dollar_is_typed() {
+        let (index, catalog, root) = antora_fixture();
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\ninclude::partial$";
+        let document = parse("file:///index.adoc", text).document;
+
+        let labels: Vec<_> = completion_at_offset(&index, &catalog, &path, &document, text.len())
+            .into_iter()
+            .map(|candidate| candidate.label)
+            .collect();
+
+        assert!(
+            labels.contains(&"partial$welcome.adoc".to_owned()),
+            "{labels:?}"
+        );
+        assert!(
+            !labels.contains(&"partial$token-note.adoc".to_owned()),
+            "another module's partials must not leak in: {labels:?}"
+        );
+    }
+
+    #[test]
+    fn offers_image_resources_for_an_image_macro() {
+        let (index, catalog, root) = antora_fixture();
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\nimage::";
+        let document = parse("file:///index.adoc", text).document;
+
+        let labels: Vec<_> = completion_at_offset(&index, &catalog, &path, &document, text.len())
+            .into_iter()
+            .map(|candidate| candidate.label)
+            .collect();
+
+        assert!(
+            labels.contains(&"architecture.svg".to_owned()),
+            "{labels:?}"
+        );
+    }
+
+    #[test]
+    fn carries_the_target_title_as_detail() {
+        let (index, catalog, root) = antora_fixture();
+        let path = root.join("modules/ROOT/pages/index.adoc");
+        let text = "= Index\n\nSee xref:security:";
+        let document = parse("file:///index.adoc", text).document;
+
+        let detail = completion_at_offset(&index, &catalog, &path, &document, text.len())
+            .into_iter()
+            .find(|candidate| candidate.label == "security:authentication.adoc")
+            .and_then(|candidate| candidate.detail);
+
+        assert!(detail.is_some(), "a page candidate carries its title");
     }
 }
