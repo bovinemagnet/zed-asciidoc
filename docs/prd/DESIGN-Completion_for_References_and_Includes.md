@@ -179,11 +179,37 @@ worse than silence.
 Responses set `isIncomplete: true`, so the client re-queries as the prefix grows and the
 server can filter against the typed prefix on each request.
 
-No cap is placed on the candidate list in this design. On the reference corpus an
-unfiltered `xref:` in a 19-module component yields roughly 541 page candidates. Whether
-that needs a cap is a question for the corpus probe in §6, and the number should come from
-that measurement. A silent truncation would be worse than none: if a cap is added, it must
-be logged rather than applied invisibly.
+No cap is placed on the candidate list. The corpus probe (§6) measured the real reference
+site — `/Users/paul/documentation/plus-suite-documentation`, 541 pages across 19 modules in
+one component — driving the built `adoc-ls` binary over stdio, opening a sample of every
+14th page (40 pages), and requesting completion at five constructed contexts plus a
+no-context control:
+
+| context           | items (mean) | items (max) | slowest response |
+|--------------------|-------------:|------------:|------------------:|
+| `xref:` (empty)    |        554.0 |         554 |             54.0ms |
+| `xref:index`       |         53.0 |          53 |              6.3ms |
+| `include::`        |          5.0 |           5 |              1.2ms |
+| `include::partial$`|         32.2 |          74 |              7.8ms |
+| `<<` (anchor)      |         15.4 |         233 |             22.8ms |
+| no context         |          0.0 |           0 |              0.6ms |
+
+The no-context control reported zero, confirming the probe measures rather than passing
+vacuously. The unfiltered `xref:` case is the worst one, at 554 candidates — the whole
+component's page list, close to the 541 pages predicted here before measurement — and it is
+still the slowest response recorded, at 54ms. That is comfortably interactive: nowhere near
+the ~100ms threshold at which a response starts to feel laggy, let alone one that would need
+a loading indicator. As soon as a character is typed the response narrows sharply (554 to 53
+for a five-letter prefix that matches the corpus's most common page basename) because
+`isIncomplete: true` makes the client re-query and `filter_by_prefix` runs again on the
+longer prefix each time, so the full unfiltered list is only ever shown for a moment before
+the first keystroke narrows it. A hand-rolled cap would add complexity — a dropped-item count
+to surface, a threshold to justify, a unit test to keep it honest — to solve a problem this
+measurement does not show: latency stays sub-frame-rate at the corpus's actual size, and list
+rendering at a few hundred items is exactly what LSP clients, including Zed's completion
+menu, are built to virtualise. **Decision: no cap.** If a future corpus is materially larger
+than this one and either count or latency degrades, this measurement is the baseline to
+compare against.
 
 ## 6. Testing
 
