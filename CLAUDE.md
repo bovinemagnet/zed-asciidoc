@@ -69,8 +69,11 @@ Definition resolution order in `handlers/definition.rs`: reference under cursor 
 - All external dependencies are pinned exactly (`=1.0.229` style); keep new ones pinned the same way. No Node.js, no JVM, no database, no custom HTML rendering engine.
 - Use `Path`/`PathBuf` for filesystem work and the crate's `normalize_path`; do not canonicalise paths that may not exist.
 - Do not clone remote Antora repositories or execute project scripts.
+- `crates/zed-asciidoc/` is an empty leftover directory outside the workspace; the extension crate is the repository root (`src/lib.rs`). Do not add code there.
 - Do not start future-phase features (completion, rename, references, code actions, cross-component Antora, preview UI) unless asked.
 
 ## Testing
 
 Unit tests live in `#[cfg(test)] mod tests` next to the code; `crates/adoc-ls/tests/stdio.rs` drives the real binary through an initialise/shutdown lifecycle via `CARGO_BIN_EXE_adoc-ls`. Shared fixtures are in `tests/fixtures/` grouped by scenario (`simple/`, `includes/`, `xrefs/`, `antora-single-component/`) and are reached from tests with `Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/...")` — never absolute developer-machine paths. Keep tests deterministic and fixtures small; add tests alongside every parser, resolver, renderer, or LSP behaviour change.
+
+Tests in `adoc-render` that spawn a process must take the crate-private `spawn_guard()` mutex in `asciidoctor.rs`. Cargo's test binary is still open for writing while sibling threads fork, so a concurrent `execve` intermittently fails with `ETXTBSY`. Serialising the spawns is the fix — do not remove the guard or add unguarded spawning tests.
