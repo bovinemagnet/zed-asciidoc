@@ -88,6 +88,13 @@
   "]"
   "{"
   "}"
-  "<<"
-  ">>"
 ] @punctuation.bracket
+
+; The `<<`/`>>` of a cross-reference get their own capture rather than sharing
+; `@punctuation.bracket` with `[]` and `{}`, so a theme can colour the xref
+; delimiters on their own without repainting every other bracket.
+(xref
+  [
+    "<<"
+    ">>"
+  ] @tag)
