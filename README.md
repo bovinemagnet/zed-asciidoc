@@ -12,12 +12,13 @@ Implemented:
 - Thin registered Zed Wasm extension entry point.
 - Zed language registration for `.adoc`, `.asciidoc`, and `.ad`.
 - Pinned block and inline Tree-sitter grammars with highlighting, outline, and source-block injection queries.
-  The grammars come from a fork whose `zed` branch carries four changes upstream does not have: a
+  The grammars come from a fork whose `zed` branch carries five changes upstream does not have: a
   `table_header_row` node, so a table's header row can be styled apart from its body; comments that no
   longer close the section containing them, which previously left every heading below the first comment
-  unparsed; document attribute values that accept globs (`src/**/*.kt`) and empty values (`:name: `); and
+  unparsed; document attribute values that accept globs (`src/**/*.kt`) and empty values (`:name: `);
   table cells written as `| text` that can carry block content, so an admonition or listing belonging to
-  a cell no longer breaks the table around it.
+  a cell no longer breaks the table around it; and constrained spans that keep word-internal delimiters,
+  so `_"COMP1010_TUT01"_` is one italic run rather than several.
 - Core AsciiDoc domain types.
 - Minimal semantic parser for titles, sections, attributes, anchors, xrefs, and includes.
 - Replacement-based workspace index and basic file/anchor definition resolution.
