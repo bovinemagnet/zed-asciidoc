@@ -139,6 +139,8 @@ branch so the two cannot disagree.
   `include::` to `guide.adoc` clears `setup.adoc`'s image warnings in the index at once,
   but the editor shows the change only when `setup.adoc` is next edited or reopened. Xref
   and anchor diagnostics already behave this way; cross-file republishing is separate work.
+  *Since resolved:* every open document's diagnostics are now republished whenever any
+  document is opened, edited or closed.
 - **Includes the index cannot resolve are invisible to the map.** A file reached only
   through `include::{undeclared}/x.adoc[]` is treated as top-level and may warn.
 - **Antora pages included by other pages** (`include::page$…`) are judged on their own
