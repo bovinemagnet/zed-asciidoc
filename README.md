@@ -35,6 +35,12 @@ Implemented:
   modules' pages module-qualified, `include::` offers the family prefixes and then that
   family's resources, and anchors come from the file a target names. In a plain workspace
   the same constructs complete relative paths, including non-AsciiDoc include targets.
+- Completion for attribute references after `{`, including inside macro targets such as
+  `include::{partialsdir}`. It offers the document's own declarations, those of every file it
+  includes, the component's `antora.yml` attributes, Antora's page and family-directory
+  attributes, and Asciidoctor's built-ins, in that order of precedence, with each value shown
+  alongside. Accepting a name supplies its closing brace, replacing one already present, and
+  attributes the document unsets are left out.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via two code actions. `AsciiDoc: render preview` renders once;
   `AsciiDoc: render live preview` additionally re-renders whenever the document is saved
