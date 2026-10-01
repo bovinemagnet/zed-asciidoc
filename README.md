@@ -59,6 +59,15 @@ Implemented:
 - Workspace symbols: Zed's project symbol search finds document titles, section headings,
   explicit anchors and attribute declarations across the workspace by the start of any word
   in their names, so `auth` and `flow` both find "Authentication Flow".
+- Antora navigation files (a module's `nav.adoc`, or a file `antora.yml` lists under `nav`)
+  get page completion, Go to Definition and missing-page warnings like any page, and their
+  outline is the navigation tree: `.Title` lines and `*`, `**`, … items nested by level, each
+  linking item showing its `xref:` target. Ordinary documents' outlines nest sections by level.
+  Zed builds outlines from Tree-sitter unless told otherwise, so to see these, set:
+
+  ```json
+  { "languages": { "AsciiDoc": { "document_symbols": "on" } } }
+  ```
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via two code actions. `AsciiDoc: render preview` renders once;
   `AsciiDoc: render live preview` additionally re-renders whenever the document is saved
