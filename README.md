@@ -44,6 +44,11 @@ Implemented:
   attributes, and Asciidoctor's built-ins, in that order of precedence, with each value shown
   alongside. Accepting a name supplies its closing brace, replacing one already present, and
   attributes the document unsets are left out.
+- Hover over an xref, `<<anchor>>`, `include::` or `image::` to see the target's title, the
+  section an anchor leads to, and where the target lives, as an Antora resource ID inside a
+  component or a relative path elsewhere. Hover over an `{attribute}` to see its value and
+  whether it comes from the document, an included file, `antora.yml`, Antora, or Asciidoctor.
+  Targets resolve exactly as Go to Definition resolves them; unresolved ones show nothing.
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via two code actions. `AsciiDoc: render preview` renders once;
   `AsciiDoc: render live preview` additionally re-renders whenever the document is saved
