@@ -28,6 +28,8 @@ Implemented:
   and block images. An image is judged only in a file nothing includes, since Asciidoctor
   resolves it against the top-level document; inside an Antora module it is resolved as an
   `image$` resource of the page's module, and partials are not judged on their own.
+  Opening, editing or closing any document refreshes the diagnostics of every open document,
+  so a change in one file updates the warnings it causes or clears in another.
 - Reference resolution that follows Asciidoctor and Antora semantics: module-root-relative page IDs,
   implicit and natural section references, anchors declared in included partials, and bibliography anchors.
 - Antora descriptor parsing plus deterministic component, module, and resource-family discovery.
