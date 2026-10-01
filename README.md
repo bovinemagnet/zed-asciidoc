@@ -35,6 +35,11 @@ Implemented:
 - Antora descriptor parsing plus deterministic component, module, and resource-family discovery.
 - Same-component Antora xref/include navigation and unknown module/resource diagnostics; components
   absent from the workspace are assumed to come from elsewhere in the playbook and are not reported.
+  A target written as a resource ID that does not parse is reported as an invalid family
+  (`partials$x.adoc`) or an invalid coordinate (too many, empty, or a malformed version); path
+  errors are not, since Antora accepts relative forms the parser rejects. A file inside a
+  component whose `antora.yml` cannot be read, or lacks `name`, is warned that Antora features
+  are off for it; descriptors are read at start-up, so a fix shows after a server restart.
 - Completion for `xref:` targets, `include::` targets, `image:` targets, and anchors.
   Inside an Antora module the current module's pages are offered as bare IDs and other
   modules' pages module-qualified, `include::` offers the family prefixes and then that
@@ -74,7 +79,8 @@ Implemented:
 
 Not implemented yet:
 
-- Cross-component/version Antora selection and `antora.yml` editor diagnostics.
+- Cross-component/version Antora selection, diagnostics inside `antora.yml` itself, and
+  re-reading descriptors when they change.
 - Rename and references. The only code action is the preview command above.
 - A preview pane inside Zed. The extension API exposes no webview or preview capability,
   so preview opens externally; see
