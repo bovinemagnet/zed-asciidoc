@@ -51,6 +51,9 @@ Implemented:
   component or a relative path elsewhere. Hover over an `{attribute}` to see its value and
   whether it comes from the document, an included file, `antora.yml`, Antora, or Asciidoctor.
   Targets resolve exactly as Go to Definition resolves them; unresolved ones show nothing.
+- Workspace symbols: Zed's project symbol search finds document titles, section headings,
+  explicit anchors and attribute declarations across the workspace by the start of any word
+  in their names, so `auth` and `flow` both find "Authentication Flow".
 - Zed language-server registration using an `adoc-ls` executable available on `PATH`.
 - HTML preview via two code actions. `AsciiDoc: render preview` renders once;
   `AsciiDoc: render live preview` additionally re-renders whenever the document is saved
