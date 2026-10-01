@@ -24,7 +24,10 @@ Implemented:
 - Replacement-based workspace index and basic file/anchor definition resolution.
 - Renderer abstraction and direct system Asciidoctor adapter for file or unsaved source, safe modes, attributes, and custom stylesheets.
 - `adoc-ls` stdio transport with incremental synchronization, document symbols, diagnostics, and Go to Definition.
-- Workspace indexing and conservative diagnostics for missing local xrefs, anchors, and includes.
+- Workspace indexing and conservative diagnostics for missing local xrefs, anchors, includes,
+  and block images. An image is judged only in a file nothing includes, since Asciidoctor
+  resolves it against the top-level document; inside an Antora module it is resolved as an
+  `image$` resource of the page's module, and partials are not judged on their own.
 - Reference resolution that follows Asciidoctor and Antora semantics: module-root-relative page IDs,
   implicit and natural section references, anchors declared in included partials, and bibliography anchors.
 - Antora descriptor parsing plus deterministic component, module, and resource-family discovery.
