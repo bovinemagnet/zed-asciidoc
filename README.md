@@ -47,7 +47,9 @@ Implemented:
   and embeds a reloader so the page keeps up; while a document is being followed that
   action becomes `AsciiDoc: stop live preview`, and closing the buffer stops it too. Both render the
   open buffer (saved or not) with Asciidoctor,
-  merges Antora page and family-directory attributes (`moduledir`, `pagesdir`,
+  merges the component's `antora.yml` `asciidoc.attributes` (where `true` sets an
+  attribute, `false` and `~` unset it, and a trailing `@` lets the page override it)
+  and Antora page and family-directory attributes (`moduledir`, `pagesdir`,
   `partialsdir`, `examplesdir`, `attachmentsdir`, `imagesdir`), rewrites
   family-qualified includes such as
   `partial$note.adoc` to absolute paths,
