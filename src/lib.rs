@@ -7,7 +7,7 @@ struct AsciiDocExtension;
 
 fn missing_binary_message() -> String {
     format!(
-        "{SERVER_BINARY} was not found on PATH; install it with `cargo install --path crates/adoc-ls`"
+        "{SERVER_BINARY} was not found on PATH; install it with `cargo install --git https://github.com/bovinemagnet/AdocFoundry adoc-ls`"
     )
 }
 
@@ -72,7 +72,9 @@ mod tests {
 
         assert!(message.contains(SERVER_BINARY), "{message}");
         assert!(
-            message.contains("cargo install --path crates/adoc-ls"),
+            message.contains(
+                "cargo install --git https://github.com/bovinemagnet/AdocFoundry adoc-ls"
+            ),
             "{message}"
         );
     }

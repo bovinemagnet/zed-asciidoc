@@ -2,13 +2,17 @@
 
 AsciiDoc for Zed is an early-stage Zed extension and language-service project for first-class AsciiDoc, Asciidoctor, and Antora authoring.
 
-The repository currently contains the initial Rust workspace, Zed language metadata, and foundational crates described in the PRDs under `docs/prd/`.
+This repository is the Zed extension: language registration, Tree-sitter queries, snippets and the
+glue that starts the `adoc-ls` language server. The language server and the crates behind it
+(`adoc-core`, `adoc-parser`, `adoc-index`, `adoc-antora`, `adoc-lang`, `adoc-render`, `adoc-ls`) now
+live in [AdocFoundry](https://github.com/bovinemagnet/AdocFoundry), where the same code also powers the
+AdocFoundry desktop editor, so improvements made there reach Zed users too. The feature list below
+describes what the extension delivers together with `adoc-ls`.
 
 ## Current Status
 
 Implemented:
 
-- Cargo workspace bootstrap.
 - Thin registered Zed Wasm extension entry point.
 - Zed language registration for `.adoc`, `.asciidoc`, and `.ad`.
 - Pinned block and inline Tree-sitter grammars with highlighting, outline, and source-block injection queries.
@@ -40,6 +44,13 @@ Implemented:
   errors are not, since Antora accepts relative forms the parser rejects. A file inside a
   component whose `antora.yml` cannot be read, or lacks `name`, is warned that Antora features
   are off for it; descriptors are read at start-up, so a fix shows after a server restart.
+- Cross-component and cross-version Antora resolution following Antora 3.2: a target naming a
+  component but no version resolves to that component's latest version (the versionless `~`
+  version first, then released versions above `prerelease` ones), `version@component:module:page`
+  selects exactly, and a component without a module means its `ROOT` module. A version of a known
+  component that is not in the workspace is assumed to be published elsewhere and not reported.
+  Pages listed in another page's `:page-aliases:` resolve to that page, with an information
+  diagnostic suggesting the current id.
 - Completion for `xref:` targets, `include::` targets, `image:` targets, and anchors.
   Inside an Antora module the current module's pages are offered as bare IDs and other
   modules' pages module-qualified, `include::` offers the family prefixes and then that
@@ -88,8 +99,7 @@ Implemented:
 
 Not implemented yet:
 
-- Cross-component/version Antora selection, diagnostics inside `antora.yml` itself, and
-  re-reading descriptors when they change.
+- Diagnostics inside `antora.yml` itself, and re-reading descriptors when they change.
 - Rename and references. The only code action is the preview command above.
 - A preview pane inside Zed. The extension API exposes no webview or preview capability,
   so preview opens externally; see
@@ -101,18 +111,19 @@ Not implemented yet:
 Run the baseline checks before completing a change:
 
 ```sh
-cargo check --workspace
 cargo fmt --check
-cargo clippy --workspace --all-targets
-cargo test --workspace
-cargo run -p adoc-ls -- --version
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo check --target wasm32-wasip2
 ```
 
-Install the language-server executable before loading the repository root as a Zed dev extension:
+Install the language-server executable from AdocFoundry before loading the repository root as a Zed dev extension:
 
 ```sh
-cargo install --path crates/adoc-ls
+cargo install --git https://github.com/bovinemagnet/AdocFoundry adoc-ls
 ```
+
+Changes to the language server, its diagnostics, completion or Antora resolution belong in AdocFoundry.
 
 Zed dev extension builds require Rust installed through `rustup` with the `wasm32-wasip2` target. Once loaded, the extension starts `adoc-ls --stdio` from `PATH` for AsciiDoc buffers.
 

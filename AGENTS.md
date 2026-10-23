@@ -2,23 +2,21 @@
 
 ## Project Structure & Module Organization
 
-This repository is a Rust workspace for an AsciiDoc language extension, semantic engine, and language server.
+This repository is the Zed extension for AsciiDoc. The language server `adoc-ls` and its semantic crates live in AdocFoundry (https://github.com/bovinemagnet/AdocFoundry); language-server changes belong there.
 
 - `docs/prd/` contains the product requirements and initial implementation specification.
-- `crates/` separates core types, parsing, indexing, Antora, rendering, LSP, and Zed integration.
+- `src/lib.rs` is the whole extension crate: it starts `adoc-ls --stdio` from `PATH`.
 - `languages/` and `extension.toml` define Zed language metadata and Tree-sitter queries.
-- `snippets/` contains editor snippets; `tests/fixtures/` contains shared AsciiDoc and Antora examples.
+- `snippets/` contains editor snippets.
 
-When adding implementation files, keep the Zed extension thin and place semantic behavior in standalone Rust crates such as `adoc-core`, `adoc-parser`, `adoc-index`, `adoc-antora`, `adoc-render`, and `adoc-ls`.
+Keep the Zed extension thin; semantic behaviour belongs in AdocFoundry's crates.
 
 ## Build, Test, and Development Commands
 
-- `cargo check --workspace` to verify all crates compile.
 - `cargo fmt --check` to enforce Rust formatting.
-- `cargo clippy --workspace --all-targets -- -D warnings` to enforce lint-clean code.
-- `cargo test --workspace` to run unit and integration tests.
-- `cargo check -p asciidoc-zed-extension --target wasm32-wasip2` to verify the Zed Wasm target.
-- `cargo run -p adoc-ls -- --version` to smoke-test the standalone binary.
+- `cargo clippy --all-targets -- -D warnings` to enforce lint-clean code.
+- `cargo test` to run the extension's unit tests.
+- `cargo check --target wasm32-wasip2` to verify the Zed Wasm target.
 
 ## Coding Style & Naming Conventions
 
@@ -28,7 +26,7 @@ For Rust code, follow standard `rustfmt` output. Use kebab-case crate names (`ad
 
 ## Testing Guidelines
 
-Add tests with each parser, resolver, renderer, or LSP behavior. Prefer deterministic unit and integration tests that run outside Zed. Store small readable fixtures in `tests/fixtures/`, grouped by scenario, for example `simple/`, `includes/`, `xrefs/`, and Antora component layouts.
+Add unit tests next to the extension code in `src/lib.rs`. Parser, resolver, renderer and LSP behaviour, with its fixtures, is tested in AdocFoundry.
 
 Do not rely on absolute developer-machine paths or external executables unless the test explicitly verifies missing-executable behavior.
 

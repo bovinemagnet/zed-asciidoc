@@ -1,3 +1,0 @@
-= Outer
-
-include::partial$level-one.adoc[]

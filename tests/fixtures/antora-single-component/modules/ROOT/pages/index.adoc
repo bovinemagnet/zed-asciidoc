@@ -1,3 +1,0 @@
-= Documentation Home
-
-xref:security:authentication.adoc[Authentication]

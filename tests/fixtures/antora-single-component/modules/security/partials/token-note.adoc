@@ -1,1 +1,0 @@
-NOTE: Authentication tokens must be protected.

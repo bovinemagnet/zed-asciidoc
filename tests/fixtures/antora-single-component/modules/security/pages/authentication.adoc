@@ -1,3 +1,0 @@
-= Authentication
-
-include::partial$token-note.adoc[]

@@ -1,3 +1,0 @@
-Cycle A.
-
-include::partial$cycle-b.adoc[]

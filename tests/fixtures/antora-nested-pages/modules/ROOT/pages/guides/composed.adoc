@@ -1,6 +1,0 @@
-= Composed Guide
-
-include::partial$glossary.adoc[]
-include::{partialsdir}/glossary.adoc[]
-
-See <<ubiquitous-language>> and xref:guides/composed.adoc#ubiquitous-language[].

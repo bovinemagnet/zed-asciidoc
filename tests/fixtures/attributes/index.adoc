@@ -1,7 +1,0 @@
-= Attributes
-:product: Widget
-:draft!:
-
-include::shared/settings.adoc[]
-
-Version {
