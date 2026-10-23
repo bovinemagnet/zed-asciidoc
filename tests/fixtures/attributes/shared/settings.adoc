@@ -1,4 +1,0 @@
-:product: Gadget
-:support-email: help@example.com
-
-include::release.adoc[]

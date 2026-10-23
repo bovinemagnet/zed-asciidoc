@@ -1,2 +1,0 @@
-* xref:index.adoc[Home]
-* xref:guides/getting-started.adoc[Getting Started]

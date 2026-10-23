@@ -1,3 +1,0 @@
-= Cyclic
-
-include::partial$cycle-a.adoc[]

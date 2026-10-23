@@ -2,13 +2,17 @@
 
 AsciiDoc for Zed is an early-stage Zed extension and language-service project for first-class AsciiDoc, Asciidoctor, and Antora authoring.
 
-The repository currently contains the initial Rust workspace, Zed language metadata, and foundational crates described in the PRDs under `docs/prd/`.
+This repository is the Zed extension: language registration, Tree-sitter queries, snippets and the
+glue that starts the `adoc-ls` language server. The language server and the crates behind it
+(`adoc-core`, `adoc-parser`, `adoc-index`, `adoc-antora`, `adoc-lang`, `adoc-render`, `adoc-ls`) now
+live in [AdocFoundry](https://github.com/bovinemagnet/AdocFoundry), where the same code also powers the
+AdocFoundry desktop editor, so improvements made there reach Zed users too. The feature list below
+describes what the extension delivers together with `adoc-ls`.
 
 ## Current Status
 
 Implemented:
 
-- Cargo workspace bootstrap.
 - Thin registered Zed Wasm extension entry point.
 - Zed language registration for `.adoc`, `.asciidoc`, and `.ad`.
 - Pinned block and inline Tree-sitter grammars with highlighting, outline, and source-block injection queries.
@@ -101,18 +105,19 @@ Not implemented yet:
 Run the baseline checks before completing a change:
 
 ```sh
-cargo check --workspace
 cargo fmt --check
-cargo clippy --workspace --all-targets
-cargo test --workspace
-cargo run -p adoc-ls -- --version
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo check --target wasm32-wasip2
 ```
 
-Install the language-server executable before loading the repository root as a Zed dev extension:
+Install the language-server executable from AdocFoundry before loading the repository root as a Zed dev extension:
 
 ```sh
-cargo install --path crates/adoc-ls
+cargo install --git https://github.com/bovinemagnet/AdocFoundry adoc-ls
 ```
+
+Changes to the language server, its diagnostics, completion or Antora resolution belong in AdocFoundry.
 
 Zed dev extension builds require Rust installed through `rustup` with the `wasm32-wasip2` target. Once loaded, the extension starts `adoc-ls --stdio` from `PATH` for AsciiDoc buffers.
 

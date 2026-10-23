@@ -1,3 +1,0 @@
-Level one content.
-
-include::partial$level-two.adoc[]
