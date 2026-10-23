@@ -44,6 +44,13 @@ Implemented:
   errors are not, since Antora accepts relative forms the parser rejects. A file inside a
   component whose `antora.yml` cannot be read, or lacks `name`, is warned that Antora features
   are off for it; descriptors are read at start-up, so a fix shows after a server restart.
+- Cross-component and cross-version Antora resolution following Antora 3.2: a target naming a
+  component but no version resolves to that component's latest version (the versionless `~`
+  version first, then released versions above `prerelease` ones), `version@component:module:page`
+  selects exactly, and a component without a module means its `ROOT` module. A version of a known
+  component that is not in the workspace is assumed to be published elsewhere and not reported.
+  Pages listed in another page's `:page-aliases:` resolve to that page, with an information
+  diagnostic suggesting the current id.
 - Completion for `xref:` targets, `include::` targets, `image:` targets, and anchors.
   Inside an Antora module the current module's pages are offered as bare IDs and other
   modules' pages module-qualified, `include::` offers the family prefixes and then that
@@ -92,8 +99,7 @@ Implemented:
 
 Not implemented yet:
 
-- Cross-component/version Antora selection, diagnostics inside `antora.yml` itself, and
-  re-reading descriptors when they change.
+- Diagnostics inside `antora.yml` itself, and re-reading descriptors when they change.
 - Rename and references. The only code action is the preview command above.
 - A preview pane inside Zed. The extension API exposes no webview or preview capability,
   so preview opens externally; see
